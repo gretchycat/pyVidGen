@@ -80,6 +80,7 @@ def parse_xml_file(xml_file):
     """Reads an XML script from a file."""
     tree = ET.parse(xml_file)
     root = tree.getroot()
+    if root.get
     """ fill in missing defaults """
     return root
 
