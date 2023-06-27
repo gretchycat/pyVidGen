@@ -1,12 +1,21 @@
-<Video>
-    <!-- Definitions section -->
-    <Definitions>
-        <!-- Define reusable elements or configurations for the video -->
-        <!-- Define predefined text overlays, transitions, etc. -->
-    </Definitions>
-    
-    <!-- Globals section -->
-    <Globals>
+<VideoScript>
+    <Version>1</Version> <!-- to make sure the vid gen or editor supports it
+                            Throw a warning and attempt to upgrade if the 
+                            script is an older version, Continue transparently
+                            if possible. Save a backup of the original script 
+                            after a successful upgrade. Throw am error on
+                            a failed upgrade-->
+    <Info> <!-- Relevent creation data. Should mirror podcast metadata-->
+        <Title></Title>
+        <SubTitle></SubTitle>
+        <Genre></Genre>
+        <Author></Author>
+        <Description></Description>
+        <etc></etc> <!-- unknown tags should be ignored -->
+    </Info>
+
+    <!-- Globals section - Default values for Clips. Every clip may override the default -->
+    <Defaults>
         <!-- Default background color for the video -->
         <BackgroundColor>#000000</BackgroundColor> <!-- Optional. default is #000 -->
         
@@ -18,13 +27,19 @@
         
         <!-- Volume level for the background music -->
         <BackgroundVolume>5%</BackgroundVolume> <!-- Optional, default is 5% -->
-    </Globals>
+        <Duration type="crop">10</Duration> <!-- Duration override forces a duration. Optional. The default is the natural length of all media sources combined. type can be crop or stretch -->
+            
+            <!-- Transition type for the transition into the next clip -->
+        <TransitionType>fade</TransitionType> <!-- Optional -->
+    </Defaults>
     
     <!-- Clips section -->
     <Clips>
         <!-- Specify one or more clips in the video -->
-        <Clip><!-- A clip may include any of at least one media type that has a duration. if No start time is provided in a media source, play it sequentially after the previous media source ends-->
-            <!-- Duration of the clip -->
+        <Clip><!-- A clip may include any of at least one media type that has 
+                a duration. if No start time is provided in a media source,
+                play it sequentially after the previous media source ends
+                Duration of the clip throw a warning -->
             <Duration type="crop">10</Duration> <!-- Duration override forces a duration. Optional. The default is the natural length of all media sources combined. type can be crop or stretch -->
             
             <!-- Transition type for the transition into the next clip -->
@@ -34,54 +49,65 @@
             <TransitionTime>2</TransitionTime> <!-- Optional -->
             
             <!-- Video file to be included in the clip -->
-            <Video>
+            <Media type="Video">
                 <FilePath>video.mp4</FilePath> <!-- Mandatory -->
-                <StartTime>0</StartTime> <!-- Optional -->
-                <Duration>8</Duration> <!-- Optional -->
-                <Volume>100</Volume> <!-- Optional, default is 100 -->
-                <!-- Positioning information for the video -->
-            </Video>
+                <Script>SCRIPT TEXT HERE</Script><!-- Optional - for CC or subtitles -->
+                <StartTime>0</StartTime> <!-- Optional default is 0 -->
+                <Duration>8</Duration> <!-- Optional - Use natural media length as default -->
+                <Volume>100</Volume> <!-- Optional, default is 100 --> 
+                <Position>Overlay</Position> <!-- all media types with a visual part may have this property. Positions may be Overlay or PiP with a location. default is Overlay-->
+            </Media>
             
             <!-- Image file to be included in the clip -->
-            <Image>
+            <Media type="Image">
                 <FilePath>image.jpg</FilePath> <!-- Mandatory -->
+                <Script>SCRIPT TEXT OR NOTES HERE</Script><!-- Optional - for CC or subtitles. encase in brackets. -->
                 <StartTime>2</StartTime> <!-- Optional -->
-                <Duration>6</Duration> <!-- Optional -->
-                <!-- Positioning information for the image -->
-            </Image>
+                <Duration>6</Duration> <!-- Required -->
+                <Position>PiP:TopRight</Position>
+            </Media>
               
             <!-- Audio file to be included in the clip -->
-            <Audio>
+            <Media type="Audio">
                 <FilePath>audio.mp3</FilePath> <!-- Mandatory -->
+                <Script>SCRIPT TEXT HERE</Script><!-- Optional - for CC or subtitles -->
                 <StartTime>3</StartTime> <!-- Optional -->
                 <Duration>5</Duration> <!-- Optional -->
                 <Volume>100</Volume> <!-- Optional, default is 100 -->
-            </Audio>
+            </Media>
             
             <!-- Text-to-speech content to be converted to audio -->
-            <TTS>
-                <Content>Hello, world!</Content> <!-- Mandatory -->
+            <Media type="TTS">
+                <Script>Hello, world!</Script> <!-- Mandatory -->
                 <StartTime>1</StartTime> <!-- Optional -->
                 <Duration>7</Duration> <!-- Optional -->
-                <AudioBufferFile>tts_audio.mp3</AudioBufferFile> <!-- Optional -->
-                <ClosedCaptioning>true</ClosedCaptioning> <!-- Optional -->
+                <AudioBufferFile>tts_audio1.wav</AudioBufferFile> <!-- Optional auto-generate with a unique predictable filename such as an md5sum the <Script> content.--> 
+                <UseForCC>False</UseForCC> <!-- Optional all media types may have this. default is True. `-->
                 <Volume>100</Volume> <!-- Optional, default is 100 -->
-            </TTS>
+            </Media>
             
             <!-- Text overlay to be added to the clip -->
-            <TextOverlay>
-                <Text>Overlay text</Text> <!-- Mandatory -->
+            <Media type="TextOverlay">
+                <Text>Overlay text</Text> <!-- Mandatory should to be added to CC or sub in brackets. -->
                 <StartTime>4</StartTime> <!-- Optional -->
                 <Duration>4</Duration> <!-- Optional -->
                 <FontSize>24</FontSize> <!-- Optional -->
                 <FontColor>#FFFFFF</FontColor> <!-- Optional -->
                 <FontFace>Arial</FontFace> <!-- Optional -->
-                <!-- Positioning information for the text overlay -->
-            </TextOverlay>
+                <FontEffect>Highlight Dropshadow Outline</FontEffect> <!-- font effect to use. default is None. Outline color should be black or white to maximize readability -->
+                <Position>Overlay:5%,5%@50%xASPECT Rotate:15</Position> <!-- Position may have secondary properties auch as Rotate -->
+            </Media>
+
+            <!-- A clips can be used as a media type. 
+                Recursively create and join clips into a video to include-->
+            <Media type="Clips"><!-- ignore empty clips and clips lists. only throw a warning -->.
+            </Media>
+
+            <Media type="Unknown"><!-- ignore unknown media types. only throw a warning -->.
+            </Media>
         </Clip>
-        
         <!-- Add more clips as needed -->
     </Clips>
-</Video>
+</VideoScript>
 
 

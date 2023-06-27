@@ -1,6 +1,8 @@
 import os
+import xml.etree.ElementTree as ET
 import subprocess
 import logging
+from optparse import OptionParser
 from gtts import gTTS
 
 # Set up logging
@@ -46,10 +48,14 @@ def get_longest_media_duration(media_list):
     """
     longest_duration = 0
     for media in media_list:
-        if 'duration' in media:
-            duration = media['duration']
+        if 'Duration' in media:
+            duration = media['Duration']
             if duration > longest_duration:
                 longest_duration = duration
+        else:
+            """Also get natural durations"""
+            """set 'duration' to the natural duration"""
+            pass
     return longest_duration
 
 def generate_clip(xml_clip_data):
@@ -71,7 +77,11 @@ def parse_xml_file(xml_file):
     Reads and parses an XML file, extracting the necessary information
     about clips, media elements, durations, and other settings.
     """
-    # Implement XML parsing logic
+    """Reads an XML script from a file."""
+    tree = ET.parse(xml_file)
+    root = tree.getroot()
+    """ fill in missing defaults """
+    return root
 
 def create_subtitle_track(clips_list, output_file):
     """
@@ -100,44 +110,51 @@ def execute_command(command):
         logging.error(f"Error executing command: {e}")
 
 def main():
+    parser=OptionParser(usage="usage: %prog [options] xmlVideoScript.xml")
+    parser.add_option("-c", "--check", dest="check", default=False,
+            help="Don't render, only check the XML and find missing media.")
+ 
+    (options, args)=parser.parse_args()
+    if len(args)==0:
+        parser.print_help()
+        return
     # Input XML file
-    xml_file = "input.xml"
+    xml_file = args[0]
+    basefn,ext= os.path.splitext(xml_file)
     # Output video file
-    output_file = "output.mp4"
-
+    output_file =basefn+".mp4"
     # Log file
-    log_file = "video_generation.log"
-
+    log_file = basefn+".log"
     # Set up logging
     setup_logging(log_file)
 
     try:
         # Parse the XML file
         xml_data = parse_xml_file(xml_file)
-        print(str(xml_data))
+        #print(ET.tostring(xml_data, encoding="unicode"))
         # Generate TTS audio buffers
-        for clip in xml_data['clips']:
-            for media in clip['media']:
-                if media['type'] == 'TTS':
-                    generate_tts_audio_buffer(media['content'], media['audio_buffer_file'])
+#        for clip in xml_data['clips']:
+#            for media in clip['media']:
+#                if media['type'] == 'TTS':
+#                    generate_tts_audio_buffer(media['content'], media['AudioBufferFile'])
 
         # Generate video clips
-        clips_list = []
-        for clip in xml_data['clips']:
-            generated_clip = generate_clip(clip)
-            clips_list.append(generated_clip)
+#        clips_list = []
+#        for clip in xml_data['clips']:
+#            generated_clip = generate_clip(clip)
+#            clips_list.append(generated_clip)
 
         # Concatenate clips and merge background audio
-        concatenate_clips(clips_list, xml_data['background_music'], output_file)
+#        concatenate_clips(clips_list, xml_data['BackgroundMusic'], output_file)
 
         # Create subtitle track
-        create_subtitle_track(clips_list, output_file)
+#        create_subtitle_track(clips_list, output_file)
 
         logging.info("Video generation completed successfully.")
     except Exception as e:
         logging.error(f"Error during video generation: {e}")
 
-if __name__ == "main":
+if __name__ == "__main__":
     main()
 
 
