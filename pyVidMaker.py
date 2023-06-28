@@ -80,9 +80,109 @@ def parse_xml_file(xml_file):
     """Reads an XML script from a file."""
     tree = ET.parse(xml_file)
     root = tree.getroot()
-    if root.get
     """ fill in missing defaults """
     return root
+
+import xml.etree.ElementTree as ET
+
+def parse_video_script(filename):
+    tree = ET.parse(filename)
+    root = tree.getroot()
+    
+    clips = []
+    
+    # Retrieve global defaults
+    global_defaults = root.find("Defaults")
+    global_defaults_dict = {}
+    parent_map = {c: p for p in root.iter() for c in p}
+    if global_defaults is not None:
+        for child in global_defaults:
+            global_defaults_dict[child.tag] = child.text
+    
+    # Retrieve all clips in the script
+    all_clips = root.findall(".//Clip")
+    for clip_element in all_clips:
+        clip_dict = global_defaults_dict.copy()
+        # Check if the clip is within a chapter
+        parent = parent_map[clip_element]
+        if parent.tag == "Chapter":
+            chapter_defaults = parent.find("Defaults")
+            if chapter_defaults is not None:
+                for child in chapter_defaults:
+                    clip_dict[child.tag] = child.text
+        
+        # Override defaults with clip-specific settings
+        clip_defaults = clip_element.find("Properties")
+        if clip_defaults is not None:
+            for child in clip_defaults:
+                clip_dict[child.tag] = child.text 
+       
+        # Add clip filename metadata
+        clip_dict["ClipFileName"] = generate_temp_filename() + ".mp4"
+        media_elements = clip_element.findall(".//Media")
+        media_list = []
+        for media_element in media_elements:
+            media_dict = {"MediaType": media_element.get("type")}
+            for child in media_element:
+                media_dict[child.tag] = child.text
+            media_list.append(media_dict)
+
+        clip_dict["Media"] = media_list
+        clips.append(clip_dict)
+    return clips
+
+def generate_temp_filename():
+    # Add your code to generate a unique temporary filename here
+    # Example implementation: Use a timestamp-based filename
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    return f"temp_{timestamp}"
+
+def check_missing_media(clips):
+    missing_media = []
+
+    for clip in clips:
+        media_list = clip.get("Media", [])
+        for media in media_list:
+            media_type = media.get("MediaType")
+            file_path = media.get("FilePath")
+
+            if media_type and file_path and not file_exists(file_path):
+                missing_media.append((media_type, file_path))
+
+    # Process missing media
+    for media_type, file_path in missing_media:
+        if media_type == "Video":
+            retrieve_video(file_path)
+        elif media_type == "Image":
+            retrieve_image(file_path)
+        elif media_type == "Audio":
+            retrieve_audio(file_path)
+        elif media_type == "TTS":
+            retrieve_tts(file_path)
+
+def file_exists(file_path):
+    # Add your code to check if the file exists
+    # Return True if the file exists, False otherwise
+    pass
+
+def retrieve_video(file_path):
+    # Add your code to retrieve the missing video file
+    pass
+
+def retrieve_image(file_path):
+    # Add your code to retrieve the missing image file
+    pass
+
+def retrieve_audio(file_path):
+    # Add your code to retrieve the missing audio file
+    pass
+
+def retrieve_tts(file_path):
+    # Add your code to retrieve the missing TTS file
+    pass
+
+
 
 def create_subtitle_track(clips_list, output_file):
     """
@@ -130,8 +230,14 @@ def main():
     setup_logging(log_file)
 
     try:
+        clips = parse_video_script(xml_file)
+        for clip in clips:
+            print(clip)
+
+        check_missing_media(clips)
+
         # Parse the XML file
-        xml_data = parse_xml_file(xml_file)
+        #xml_data = parse_xml_file(xml_file)
         #print(ET.tostring(xml_data, encoding="unicode"))
         # Generate TTS audio buffers
 #        for clip in xml_data['clips']:

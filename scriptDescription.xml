@@ -11,6 +11,8 @@
         <Genre></Genre>
         <Author></Author>
         <Description></Description>
+        <Date></Date>
+        <Time></Time>
         <etc></etc> <!-- unknown tags should be ignored -->
     </Info>
 
@@ -35,19 +37,38 @@
     
     <!-- Clips section -->
     <Clips>
+        <Chapter name="My Name">
+            <Defaults> <!-- Any defaults may be ovverriden for the chapter -->
+                <!-- Default background color for the chapter -->
+                <BackgroundColor>#F00</BackgroundColor> <!-- Optional. default is #000 -->
+                <!-- Transition type for the transition into the chapter -->
+                <TransitionType>swipeleft</TransitionType> <!-- Optional -->
+            </Defaults>
+            <Info> <!-- Relevent Chapter metadata.Any tag may or may not exist -->
+                <!--These tags will be for the chapter metadata -->
+                <Title>Title Here</Title> 
+                <Description>Description of the chapter</Description>
+            </Info>
+            <Clip>
+                <Media type="Video">
+                    <FilePath>myname.mp4</FilePath> <!-- Mandatory -->
+                </Media> 
+            </Clip>
+        </Chapter>
         <!-- Specify one or more clips in the video -->
         <Clip><!-- A clip may include any of at least one media type that has 
                 a duration. if No start time is provided in a media source,
                 play it sequentially after the previous media source ends
                 Duration of the clip throw a warning -->
-            <Duration type="crop">10</Duration> <!-- Duration override forces a duration. Optional. The default is the natural length of all media sources combined. type can be crop or stretch -->
-            
-            <!-- Transition type for the transition into the next clip -->
-            <TransitionType>fade</TransitionType> <!-- Optional -->
-            
-            <!-- Transition duration for the transition into the next clip -->
-            <TransitionTime>2</TransitionTime> <!-- Optional -->
-            
+            <Properties>
+                <Duration type="crop">10</Duration> <!-- Duration override forces a duration. Optional. The default is the natural length of all media sources combined. type can be crop or stretch -->
+                
+                <!-- Transition type for the transition into the next clip -->
+                <TransitionType>fade</TransitionType> <!-- Optional -->
+                
+                <!-- Transition duration for the transition into the next clip -->
+                <TransitionTime>2</TransitionTime> <!-- Optional -->
+            </Properties>
             <!-- Video file to be included in the clip -->
             <Media type="Video">
                 <FilePath>video.mp4</FilePath> <!-- Mandatory -->
@@ -100,14 +121,14 @@
 
             <!-- A clips can be used as a media type. 
                 Recursively create and join clips into a video to include-->
-            <Media type="Clips"><!-- ignore empty clips and clips lists. only throw a warning -->.
+            <Media type="Clips"><!-- ignore empty or incomplete media, clips and clips lists. only throw a warning -->.
             </Media>
 
             <Media type="Unknown"><!-- ignore unknown media types. only throw a warning -->.
             </Media>
         </Clip>
         <!-- Add more clips as needed -->
-    </Clips>
+    </Clips> <!-- Upon completion of rendering, Display a nicely formatted warning and error log -->
 </VideoScript>
 
 
