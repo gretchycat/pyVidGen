@@ -144,9 +144,6 @@ def check_missing_media(clips):
                     missing+=get_missing_file(media_type, file_path, description, script)
                 if not file_exists(buffer_file):
                     missing+=get_missing_file(media_type, buffer_file, description, script)
-
-    # Add your code to check if the file exists
-    # Return True if the file exists, False otherwise
     return missing
 
 def get_missing_file(type, file_path, description, script):
