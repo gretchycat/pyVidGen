@@ -1,10 +1,7 @@
-import os
+import os, hashlib, subprocess, logging, pprint
 import xml.etree.ElementTree as ET
-import subprocess
-import logging
 from optparse import OptionParser
 from gtts import gTTS
-import pprint
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -17,16 +14,15 @@ def generate_tts_audio_buffer(audio_buffer_file, text_content):
     if not file_exists(audio_buffer_file):
         tts = gTTS(text=text_content)
         tts.save(audio_buffer_file)
-        logging.info(f"TTS audio buffer generated: {audio_buffer_file}")
-    else:
-        logging.info(f"TTS audio buffer already exists: {audio_buffer_file}")
 
 def file_exists(file_path):
     """
     Checks if a file exists at the given file path.
     Returns True if it exists, False otherwise.
     """
-    return os.path.isfile(file_path)
+    if file_path is not None:
+        return os.path.isfile(file_path)
+    return None
 
 def convert_file_format(input_file, output_file, output_format):
     """
@@ -122,10 +118,13 @@ def parse_video_script(filename):
         clips.append(clip_dict)
     return clips
 
-def generate_temp_filename():
+def generate_temp_filename(fnkey=None):
     # Add your code to generate a unique temporary filename here
     # Example implementation: Use a timestamp-based filename
     import datetime
+    if(fnkey):
+        return "temp_"+hashlib.md5(fnkey).hexdigest()
+    
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     return f"temp_{timestamp}"
 
@@ -136,49 +135,38 @@ def check_missing_media(clips):
         for media in media_list:
             media_type = media.get("MediaType")
             file_path = media.get("FilePath")
-            audio_buffer = media.get("AudioBufferFile")
+            buffer_file = media.get("BufferFile")
             script = media.get('Script')
-            search_terms = media.get("Search Terms")
-            print("---------")
+            description = media.get("Description")
             if media_type:
-                if file_path and not file_exists(file_path):
-                    # Process missing media
-                    if media_type == "Video":
-                        missing+=retrieve_video(file_path, search_terms, script)
-                    elif media_type == "Image":
-                        missing+=retrieve_image(file_path, search_terms)
-                    elif media_type == "Audio":
-                        missing+=retrieve_audio(file_path, search_terms, script)
-                elif audio_buffer and not file_exists(audio_buffer):
-                    if media_type == "TTS":
-                        missing+=retrieve_tts(audio_buffer, script)
-                else:
-                    print(f'Need a {media_type} handler')
+                # Process missing media
+                if not file_exists(file_path):
+                    missing+=get_missing_file(media_type, file_path, description, script)
+                if not file_exists(buffer_file):
+                    missing+=get_missing_file(media_type, buffer_file, description, script)
 
     # Add your code to check if the file exists
     # Return True if the file exists, False otherwise
     return missing
 
-def retrieve_video(file_path, search_terms, script):
-    print(f"Missing video: {file_path}\nSearch: {search_terms}\nScript: {script}")
-    # Add your code to retrieve the missing video file
-    return 0 if file_exists(file_path) else 1
+def get_missing_file(type, file_path, description, script):
+    if file_path:
+        log=logging.info
+        verb="Acquiring"
+        log(f"{verb} {type}: {file_path}\n\tDescription: {description}\n\tScript: {script}")
+        if type=="TTS": 
+            verb="Generated"
+            generate_tts_audio_buffer(file_path, script)
+        elif type=="Image/":
+            verb="Found"
 
-def retrieve_image(file_path, search_terms):
-    print(f"Generating image: {file_path}\nSearch: {search_terms}")
-    # Add your code to retrieve the missing image file
-    return 0 if file_exists(file_path) else 1
-
-def retrieve_audio(file_path, search_terms, script):
-    print(f"Missing Audio {file_path}\nSearch: {search_terms}\nScript: {script}")
-    # Add your code to retrieve the missing audio file
-    return 0 if file_exists(file_path) else 1
-
-def retrieve_tts(file_path, script):
-    print(f"Generating TTS: {file_path}\nScript: {script}")
-    generate_tts_audio_buffer(file_path, script)
-    # Add your code to retrieve the missing TTS file
-    return 0 if file_exists(file_path) else 1
+        missing=0 if file_exists(file_path) else 1
+        if missing>0:
+            verb="Missing"
+            log=logging.warning
+        log(f"{verb} {type}: {file_path}")
+        return missing
+    return 0
 
 def create_subtitle_track(clips_list, output_file):
     """
@@ -232,7 +220,7 @@ def main():
 
         missing=check_missing_media(clips)
         if(missing):
-            print(f'There are {missing} missing media files.')
+            logging.error(f'There are {missing} missing media files.')
         else:
             pass
         # Parse the XML file
@@ -256,7 +244,7 @@ def main():
         # Create subtitle track
 #        create_subtitle_track(clips_list, output_file)
 
-        logging.info("Video generation completed successfully.")
+            logging.info("Video generation completed successfully.")
     except Exception as e:
         logging.error(f"Error during video generation: {e}")
 

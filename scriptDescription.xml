@@ -72,6 +72,7 @@
             <!-- Video file to be included in the clip -->
             <Media type="Video">
                 <FilePath>video.mp4</FilePath> <!-- Mandatory -->
+                <Description>media description</Description>i <!-- used to find the media -->
                 <Script>SCRIPT TEXT HERE</Script><!-- Optional - for CC or subtitles -->
                 <StartTime>0</StartTime> <!-- Optional default is 0 -->
                 <Duration>8</Duration> <!-- Optional - Use natural media length as default -->
@@ -83,6 +84,7 @@
             <Media type="Image">
                 <FilePath>image.jpg</FilePath> <!-- Mandatory -->
                 <Script>SCRIPT TEXT OR NOTES HERE</Script><!-- Optional - for CC or subtitles. encase in brackets. -->
+                <Description>About the image</Description> <!-- all media types may have a description -->
                 <StartTime>2</StartTime> <!-- Optional -->
                 <Duration>6</Duration> <!-- Required -->
                 <Position>PiP:TopRight</Position>
@@ -102,7 +104,7 @@
                 <Script>Hello, world!</Script> <!-- Mandatory -->
                 <StartTime>1</StartTime> <!-- Optional -->
                 <Duration>7</Duration> <!-- Optional -->
-                <AudioBufferFile>tts_audio1.wav</AudioBufferFile> <!-- Optional auto-generate with a unique predictable filename such as an md5sum the <Script> content.--> 
+                <FilePath>tts_audio1.wav</FilePath> <!-- Optional auto-generate with a unique predictable filename such as an md5sum the <Script> content.--> 
                 <UseForCC>False</UseForCC> <!-- Optional all media types may have this. default is True. `-->
                 <Volume>100</Volume> <!-- Optional, default is 100 -->
             </Media>
