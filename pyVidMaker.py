@@ -129,6 +129,7 @@ def generate_temp_filename(fnkey=None):
     return f"temp_{timestamp}"
 
 def check_missing_media(clips):
+    """ also check for background audio file """
     missing=0
     for clip in clips:
         media_list = clip.get("Media", [])
