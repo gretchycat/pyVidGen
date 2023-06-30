@@ -1,58 +1,21 @@
 #!/usr/bin/python3
-import os,sys,termios,tty, subprocess
+import io, os,sys,termios,tty, subprocess, base64
 from optparse import OptionParser
 from icat import ICat 
-
-parser=OptionParser(usage="usage: %prog [options] filelist")
-parser.add_option("-m", "--mode", dest="mode", default="24bit", 
-        help="Color mode: 24bit | 8bit | 8bitbright | 8bitgrey | 4bit | 4bitgrey | 3bit | bw")
-parser.add_option("-c", "--charset", dest="charset", default="utf8",
-        help="Character set: utf8 | ascii")
-parser.add_option('-t', '--target', dest='target', default='selected.png',
-        help='the target filename for the image.')
-(options, args)=parser.parse_args()
-
-screenrows, screencolumns = os.popen('stty size', 'r').read().split()
-
-keymap={ "\x1b[A":"Up", "\x1b[B":"Down",\
-         "\x1b[C":"Right", "\x1b[D":"Left",\
-         "\x7f":"Backspace", "\x09":"Tab",\
-         "\x0a":"Enter", "\x1b\x1b":"Esc",\
-         "\x1b[H":"Home", "\x1b[F":"End",\
-         "\x1b[5~":"PgUp", "\x1b[6~":"PgDn",\
-         "\x1b[2~":"Ins", "\x1b[3~":"Del",\
-         "\x1bOP":"F1", "\x1bOQ":"F2",\
-         "\x1bOR":"F3", "\x1bOS": "F4",\
-         "\x1b[15~":"F5", "\x1b[17~": "F6",\
-         "\x1b[18~":"F7", "\x1b[19~": "F8",\
-         "\x1b[20~":"F9", "\x1b[21~": "F10",\
-         "\x1b[23~":"F11", "\x1b[24~": "F12",\
-         "\x1b[32~":"SyRq", "\x1b[34~": "Brk" }
-
-def disable_keyboard_echo():
-    # Get the current terminal attributes
-    attributes = termios.tcgetattr(sys.stdin)
-    # Disable echo flag
-    attributes[3] = attributes[3] & ~termios.ECHO
-    # Apply the modified attributes
-    termios.tcsetattr(sys.stdin, termios.TCSANOW, attributes)
-
-def enable_keyboard_echo():
-    # Get the current terminal attributes
-    attributes = termios.tcgetattr(sys.stdin)
-    # Enable echo flag
-    attributes[3] = attributes[3] | termios.ECHO
-    # Apply the modified attributes
-    termios.tcsetattr(sys.stdin, termios.TCSANOW, attributes)
+from PIL import Image
+from base64 import standard_b64encode
 
 class boxDraw:
     def __init__(self, bgColor='#157', \
                 chars="\u2584\u2584\u2584\u2588\u2593\u2588\u2580\u2580\u2580",\
-                frameColors=['#FFF', '#AAA','#777','#AAA', 0, '#555', '#777','#555','#333']):
+                frameColors=['#FFF', '#AAA','#777','#AAA', 0, '#555', '#777','#555','#333'],\
+                title="", statusBar=''):
         self.bgColor=bgColor
         self.chars=chars
         self.frameColors=frameColors
         self.tinted=None
+        self.title=title
+        self.statusBar=statusBar
 
     def setColors(self, bgcolor, frameColors):
         self.bgColor=bgColor
@@ -137,133 +100,163 @@ class boxDraw:
             self.color(colors[6], self.bgColor)+self.chars[6]+\
             self.color(colors[7], self.bgColor)+self.chars[7]*(w-2)+\
             self.color(colors[8], self.bgColor)+self.chars[8]+"\x1b[0m"
+        if self.title!='':
+            desc=self.title
+            descX=int(x+(w/2)-(len(desc)/2))+1
+            descY=int(y)
+            descPos=self.move(descX, descY)
+            descColor=self.color(16, colors[1])
+            buff+=f'{descPos}{descColor}{desc}\n'
+        if self.statusBar!='':
+            pass
         return buff
 
-import io, base64
-from base64 import standard_b64encode
+class termKeyboard:
+    def __init__(self):
+        self.keymap={ "\x1b[A":"Up", "\x1b[B":"Down",\
+                 "\x1b[C":"Right", "\x1b[D":"Left",\
+                 "\x7f":"Backspace", "\x09":"Tab",\
+                 "\x0a":"Enter", "\x1b\x1b":"Esc",\
+                 "\x1b[H":"Home", "\x1b[F":"End",\
+                 "\x1b[5~":"PgUp", "\x1b[6~":"PgDn",\
+                 "\x1b[2~":"Ins", "\x1b[3~":"Del",\
+                 "\x1bOP":"F1", "\x1bOQ":"F2",\
+                 "\x1bOR":"F3", "\x1bOS": "F4",\
+                 "\x1b[15~":"F5", "\x1b[17~": "F6",\
+                 "\x1b[18~":"F7", "\x1b[19~": "F8",\
+                 "\x1b[20~":"F9", "\x1b[21~": "F10",\
+                 "\x1b[23~":"F11", "\x1b[24~": "F12",\
+                 "\x1b[32~":"SyRq", "\x1b[34~": "Brk" }
 
-def split_md5_string(encoded_data):
-    # Split the encoded data into chunks of maximum length 4096 bytes
-    chunk_size = 4096
-    num_chunks = (len(encoded_data) + chunk_size - 1) // chunk_size
-    chunks = [encoded_data[i*chunk_size:(i+1)*chunk_size] for i in range(num_chunks)]
-    return chunks
+    def disable_keyboard_echo(self): # Get the current terminal attributes
+        attributes = termios.tcgetattr(sys.stdin)
+        # Disable echo flag
+        attributes[3] = attributes[3] & ~termios.ECHO
+        # Apply the modified attributes
+        termios.tcsetattr(sys.stdin, termios.TCSANOW, attributes)
 
-def showImage(image, x=0, y=0, w=30, h=15, showInfo=False):
-    desc=""
-    if(showInfo):
-        img = Image.open(image)
-        imgX,imgY=img.size
-        img.close()
-        filename=os.path.basename(image)
-        desc=f'({imgX}x{imgY}) {filename}'[:w]
-        descX=int(x+(w/2)-(len(desc)/2))+1
-        descY=int(y+h)-1
-        desc=f'\x1b[s\x1b[48;5;245;30m\x1b[{descY};{descX}H{desc}\n'
-    if 'kitty not working yet' in os.environ.get('TERM', ''):
-        start_pos = f'\x1b[{y};{x}H'
-        image_size = f'\x1b[8;{h};{w}t'
-        start_image= f'\x1b_Ga=T;f=100;t=d;c={x};r={y};s={w};v={h};'
-        continue_image= f'\x1b_G'
-        end_image='\x1b\\'
-        img = Image.open(image)
-        max_size=1024
-        # Calculate the scaling factor while preserving the aspect ratio
-        width, height = img.size
-        if width > max_size or height > max_size:
-            aspect_ratio = width / height
-            if width > height:
-                new_width = max_size
-                new_height = int(new_width / aspect_ratio)
-            else:
-                new_height = max_size
-                new_width = int(new_height * aspect_ratio)
-            # Resize the image
-            img = img.resize((new_width, new_height), Image.LANCZOS)
-        # Generate a PNG stream
-        png_stream = io.BytesIO()
-        img.save(png_stream, format='PNG')
-        png_stream.seek(0)
-        #base64_image=write_chunked(a='T', f=100, data=png_stream.read())
-        base64_image = str(standard_b64encode(png_stream.getvalue()))
-        png_stream.close()
-        payloads=split_md5_string(base64_image)
-        first=True
-        out=""
-        for i, payload in enumerate(payloads):
-            m_key = "1" if i < len(payloads) - 1 else "0"
-            if first:
-                out+=f'{start_pos}{image_size}{start_image}m={m_key};{payload}{end_image}'
-                first=False
-            else:
-                out+=f'{continue_image}m={m_key};{payload}{end_image}'
-        return outi+desc
-    ic=ICat(mode=options.mode.lower(), w=int(w), h=int(h), 
-            zoom='aspect', f=True, charset=options.charset.lower(),
-            x=int(x), y=int(y)) 
-    return ic.print(image)+desc
+    def enable_keyboard_echo(self): # Get the current terminal attributes
+        attributes = termios.tcgetattr(sys.stdin)
+        # Enable echo flag
+        attributes[3] = attributes[3] | termios.ECHO
+        # Apply the modified attributes
+        termios.tcsetattr(sys.stdin, termios.TCSANOW, attributes)
 
-def convert_to_escape(text):
-    escape_text = ""
-    for char in text:
-        if char.isprintable():
-            escape_text += char
-        else:
-            escape_text += "\\x" + hex(ord(char))[2:]
-    return escape_text
+    def read_keyboard_input(self): # Get the current settings of the terminal
+        filedescriptors = termios.tcgetattr(sys.stdin)
 
-def read_keyboard_input():
-    # Get the current settings of the terminal
-    filedescriptors = termios.tcgetattr(sys.stdin)
+        # Set the terminal to cooked mode
+        tty.setcbreak(sys.stdin)
 
-    # Set the terminal to cooked mode
-    tty.setcbreak(sys.stdin)
-
-    # Read a character from the terminal
-    char = sys.stdin.read(1)
-    buffer=char
-    # Check if the character is an arrow key or a function key
-    if char == "\x1b":
+        # Read a character from the terminal
         char = sys.stdin.read(1)
-        buffer+=char
-        if(char=='O'):
+        buffer=char
+        # Check if the character is an arrow key or a function key
+        if char == "\x1b":
             char = sys.stdin.read(1)
             buffer+=char
-        elif char=='[':
-            char = sys.stdin.read(1)
-            buffer+=char
-            while char>='0' and char<='9' or char==';':
+            if(char=='O'):
                 char = sys.stdin.read(1)
                 buffer+=char
-    # Restore the original settings of the terminal
-    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, filedescriptors)
+            elif char=='[':
+                char = sys.stdin.read(1)
+                buffer+=char
+                while char>='0' and char<='9' or char==';':
+                    char = sys.stdin.read(1)
+                    buffer+=char
+        # Restore the original settings of the terminal
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, filedescriptors)
+        key=self.keymap.get(buffer)
+        return key or buffer
 
-    key=keymap.get(buffer)
-    return key or buffer
+class imageSelect:
+    def __init__(self):
+        pass
 
-from PIL import Image
+    def split_md5_string(iself, encoded_data): # Split encoded data into 4096 byte chunks
+        chunk_size = 4
+        num_chunks = (len(encoded_data) + chunk_size - 1) // chunk_size
+        chunks = [encoded_data[i*chunk_size:(i+1)*chunk_size] for i in range(num_chunks)]
+        return chunks
 
-def copy_image(source_path, destination_path):
-    try:
-        # Open the source image
-        source_image = Image.open(source_path)
-        # Save a copy of the source image to the destination path
-        source_image.save(destination_path)
-        print(f"Image copied from {source_path} to {destination_path}")
-    except IOError:
-        print(f"Unable to copy image from {source_path} to {destination_path}")
+    def showImage(self, image, x=0, y=0, w=30, h=15, showInfo=False):
+        desc=""
+        if(showInfo):
+            img = Image.open(image)
+            imgX,imgY=img.size
+            img.close()
+            filename=os.path.basename(image)
+            desc=f'({imgX}x{imgY}) {filename}'[:w]
+            descX=int(x+(w/2)-(len(desc)/2))+1
+            descY=int(y+h)-1
+            desc=f'\x1b[s\x1b[48;5;245;30m\x1b[{descY};{descX}H{desc}\n'
+        if 'kitty not working yet' in os.environ.get('TERM', ''):
+            start_pos = f'\x1b[{y};{x}H'
+            image_size = f'\x1b[8;{h};{w}t'
+            start_image= f'\x1b_Ga=T;f=100;t=d;c={x};r={y};s={w};v={h};'
+            continue_image= f'\x1b_G'
+            end_image='\x1b\\'
+            img = Image.open(image)
+            max_size=1024
+            # Calculate the scaling factor while preserving the aspect ratio
+            width, height = img.size
+            if width > max_size or height > max_size:
+                aspect_ratio = width / height
+                if width > height:
+                    new_width = max_size
+                    new_height = int(new_width / aspect_ratio)
+                else:
+                    new_height = max_size
+                    new_width = int(new_height * aspect_ratio)
+                # Resize the image
+                img = img.resize((new_width, new_height), Image.LANCZOS)
+            # Generate a PNG stream
+            png_stream = io.BytesIO()
+            img.save(png_stream, format='PNG')
+            png_stream.seek(0)
+            #base64_image=write_chunked(a='T', f=100, data=png_stream.read())
+            base64_image = str(standard_b64encode(png_stream.getvalue()))
+            png_stream.close()
+            payloads=self.split_md5_string(base64_image)
+            first=True
+            out=""
+            for i, payload in enumerate(payloads):
+                m_key = "1" if i < len(payloads) - 1 else "0"
+                if first:
+                    out+=f'{start_pos}{image_size}{start_image}m={m_key};{payload}{end_image}'
+                    first=False
+                else:
+                    out+=f'{continue_image}m={m_key};{payload}{end_image}'
+            return outi+desc
+        ic=ICat(w=int(w), h=int(h), zoom='aspect', f=True, x=int(x), y=int(y)) 
+        return ic.print(image)+desc
 
+    def convert_to_escape(self, text):
+        escape_text = ""
+        for char in text:
+            if char.isprintable():
+                escape_text += char
+            else:
+                escape_text += "\\x" + hex(ord(char))[2:]
+        return escape_text
 
+    def copy_image(self, source_path, destination_path):
+        try:
+            # Open the source image
+            source_image = Image.open(source_path)
+            # Save a copy of the source image to the destination path
+            source_image.save(destination_path)
+            print(f"Image copied from {source_path} to {destination_path}")
+        except IOError:
+            print(f"Unable to copy image from {source_path} to {destination_path}")
 
-def main():
-    buffer=""
-    if len(args)==0:
-        parser.print_help()
-    else:
+    def interface(self, target, images, describe):
+        buffer=""
+        kb=termKeyboard()
         # Save the current terminal settings
         stdin_fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(stdin_fd)
-        disable_keyboard_echo()
+        kb.disable_keyboard_echo()
         #start reporting mouse events
         print("\x1b[?1000h\x1b[?25l",end='')
         cols=3
@@ -274,16 +267,17 @@ def main():
         xsep=2
         y0=2
         ysep=0
-        w=int((int(screencolumns)+1-((x0-1)*2)-((cols-1)*xsep))/cols)
-        h=int((int(screenrows)+1-((y0-1)*2)-((rows-1)*ysep))/rows)
- 
         backBox=boxDraw( bgColor='#157',\
-                chars="\u2588\u2580\u2588\u2588 \u2588\u2588\u2584\u2588")
+                chars="\u2588\u2580\u2588\u2588 \u2588\u2588\u2584\u2588",\
+                title=describe, statusBar='')
         backBox.tintFrame("#9DF")
         box=boxDraw()
         key=''
         refresh=True
         while True:
+            screenrows, screencolumns = os.popen('stty size', 'r').read().split()
+            w=int((int(screencolumns)+1-((x0-1)*2)-((cols-1)*xsep))/cols)
+            h=int((int(screenrows)+1-((y0-1)*2)-((rows-1)*ysep))/rows)
             buffer=""
             if refresh:
                 buffer+=(backBox.draw(1,1, int(screencolumns), int(screenrows)))
@@ -300,14 +294,14 @@ def main():
                         box.unTintFrame()
                     if drawBoxes:
                         buffer+=(box.draw(c,r,w,h,fillBoxes))
-                    if index<len(args) and refresh:
-                        buffer+=showImage(args[index], x=c, y=r+1, w=w-2, h=h-2, showInfo=True)
+                    if index<len(images) and refresh:
+                        buffer+=self.showImage(images[index], x=c, y=r+1, w=w-2, h=h-2, showInfo=True)
             refresh=False
             drawBoxes=False
             fillBoxes=False
             print(buffer,end='')
             print(F"\x1b[0;0H",end='')
-            key=read_keyboard_input()
+            key=kb.read_keyboard_input()
 
             page0=page
             if key=="Up":
@@ -315,7 +309,7 @@ def main():
                     selected=selected-cols
                     drawBoxes=True
             if key=="Down":
-                if selected+cols<len(args):
+                if selected+cols<len(images):
                     selected=selected+cols
                     drawBoxes=True
             if key=="Left":
@@ -327,15 +321,17 @@ def main():
                     selected=selected+1
                     drawBoxes=True
             if key=="Enter":
-                if selected<len(args):
-                    print(showImage(args[selected], w=int(screencolumns), h=int(screenrows))+'-'*(int(screencolumns)))
+                if selected<len(images):
+                    print(self.showImage(images[selected],\
+                        w=int(screencolumns),\
+                        h=int(screenrows))+'-'*(int(screencolumns)))
                     print("\x1b[KSelect this image? (y/n)")
-                    key=read_keyboard_input()
+                    key=kb.read_keyboard_input()
                     if key=='y' or key=='Y':
-                        imagefile=args[selected]
+                        imagefile=images[selected]
                         print(F"\x1b[Jchose:'{imagefile}'")
-                        print("writing target image: "+options.target)
-                        copy_image(imagefile, options.target)
+                        print("writing target image: "+target)
+                        self.copy_image(imagefile, target)
                         break
                     refresh=True
 
@@ -348,10 +344,23 @@ def main():
                 page=page+1
             if(page0!=page):
                 refresh=True
- 
+
         print(F"\x1b[1000l\x1b[?25h")
-        enable_keyboard_echo()
+        kb.enable_keyboard_echo()
         termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_settings)
+
+def main():
+    parser=OptionParser(usage="usage: %prog [options] filelist")
+    parser.add_option('-t', '--target', dest='target', default='selected.png',
+            help='the target filename for the image.')
+    parser.add_option('-d', '--describe', dest='describe', default='',
+            help='Text to describe the image.')
+    (options, args)=parser.parse_args()
+    if len(args)==0:
+        parser.print_help()
+    else:
+        imgs=imageSelect()
+        imgs.interface(options.target, args, options.describe)
 
 if __name__ == "__main__":
     main()

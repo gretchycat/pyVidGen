@@ -44,11 +44,15 @@ def search_and_download_images(query, num_images, destination_dir):
         except Exception as e:
             print(f"Error downloading image: {str(e)}")
 
-# Parse command-line arguments
-parser = argparse.ArgumentParser(description='Download images from Google Images')
-parser.add_argument('query', type=str, help='search query')
-parser.add_argument('num_images', type=int, help='number of images to download')
-parser.add_argument('destination_dir', type=str, help='destination directory')
-args = parser.parse_args()
+def main():
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Download images from Google Images')
+    parser.add_argument('query', type=str, help='search query')
+    parser.add_argument('num_images', type=int, help='number of images to download')
+    parser.add_argument('destination_dir', type=str, help='destination directory')
+    args = parser.parse_args()
 
-search_and_download_images(args.query, args.num_images, args.destination_dir)
+    search_and_download_images(args.query, args.num_images, args.destination_dir)
+
+if __name__ == "__main__":
+    main()

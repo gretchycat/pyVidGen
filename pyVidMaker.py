@@ -1,10 +1,55 @@
 import os, hashlib, subprocess, logging, pprint
+import requests
+from bs4 import BeautifulSoup
+import urllib.parse
 import xml.etree.ElementTree as ET
 from optparse import OptionParser
 from gtts import gTTS
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Function to search and download images from Google Images
+def search_and_download_images(query, num_images, destination_dir):
+    # Create the destination directory if it doesn't exist
+    os.makedirs(destination_dir, exist_ok=True)
+
+    # Prepare the search query and URL
+    search_query = urllib.parse.quote(query)
+    url = f"https://www.google.com/search?q={search_query}&tbm=isch"
+
+    # Send a GET request to Google Images
+    response = requests.get(url)
+
+    # Parse the HTML response using BeautifulSoup
+    soup = BeautifulSoup(response.text, 'html.parser')
+
+    # Find all image elements on the page
+    image_elements = soup.find_all('img')
+
+    # Iterate over the specified number of images or until there are no more images available
+    count = 0
+    for img in image_elements:
+        if count == num_images:
+            break
+
+        try:
+            # Extract the image URL
+            image_url = img['src']
+
+            # Download the image and save it to the destination directory
+            image_name = f"image{count+1}.jpg"  # You can modify the image name as desired
+            image_path = os.path.join(destination_dir, image_name)
+            urllib.request.urlretrieve(image_url, image_path)
+
+            print(f"Downloaded {image_name}")
+
+            # Increment the count of downloaded images
+            count += 1
+        except Exception as e:
+            print(f"Error downloading image: {str(e)}")
+
+
 
 def generate_tts_audio_buffer(audio_buffer_file, text_content):
     """
@@ -155,9 +200,12 @@ def get_missing_file(type, file_path, description, script):
         if type=="TTS": 
             verb="Generated"
             generate_tts_audio_buffer(file_path, script)
-        elif type=="Image/":
+        elif type=="Image":
             verb="Found"
-
+            search_and_download_images(description, 20, 'image_temp')
+            print(';getting image')
+            #imageSelect('imagetemp/*', file_path)
+            #rm -rf image_temp
         missing=0 if file_exists(file_path) else 1
         if missing>0:
             verb="Missing"
