@@ -1,10 +1,11 @@
-import os, hashlib, subprocess, logging, pprint
+import os, hashlib, subprocess, logging, pprint, datetime, glob, shutil
 import requests
 from bs4 import BeautifulSoup
 import urllib.parse
 import xml.etree.ElementTree as ET
 from optparse import OptionParser
 from gtts import gTTS
+from imageSelect import imageSelect
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -48,8 +49,6 @@ def search_and_download_images(query, num_images, destination_dir):
             count += 1
         except Exception as e:
             print(f"Error downloading image: {str(e)}")
-
-
 
 def generate_tts_audio_buffer(audio_buffer_file, text_content):
     """
@@ -166,7 +165,6 @@ def parse_video_script(filename):
 def generate_temp_filename(fnkey=None):
     # Add your code to generate a unique temporary filename here
     # Example implementation: Use a timestamp-based filename
-    import datetime
     if(fnkey):
         return "temp_"+hashlib.md5(fnkey).hexdigest()
     
@@ -204,7 +202,10 @@ def get_missing_file(type, file_path, description, script):
             verb="Found"
             search_and_download_images(description, 20, 'image_temp')
             print(';getting image')
-            #imageSelect('imagetemp/*', file_path)
+            imgs=imageSelect()
+
+            imgs.interface(file_path, glob.glob('image_temp/*'), description)
+            shutil.rmtree('image_temp')
             #rm -rf image_temp
         missing=0 if file_exists(file_path) else 1
         if missing>0:
@@ -220,7 +221,6 @@ def create_subtitle_track(clips_list, output_file):
     and saves it to the output file.
     """
     # Implement subtitle track creation logic
-
 def setup_logging(log_file):
     """
     Configures logging settings to record events, errors, and status messages.
@@ -259,7 +259,8 @@ def main():
     # Set up logging
     setup_logging(log_file)
 
-    try:
+    #try:
+    if True:
         clips = parse_video_script(xml_file)
         for clip in clips:
             pprint.pprint(clip)
@@ -291,8 +292,8 @@ def main():
 #        create_subtitle_track(clips_list, output_file)
 
             logging.info("Video generation completed successfully.")
-    except Exception as e:
-        logging.error(f"Error during video generation: {e}")
+#    except Exception as e:
+#        logging.error(f"Error during video generation: {e}")
 
 if __name__ == "__main__":
     main()
