@@ -29,7 +29,7 @@
         
         <!-- Volume level for the background music -->
         <BackgroundVolume>5%</BackgroundVolume> <!-- Optional, default is 5% -->
-        <Duration type="crop">10</Duration> <!-- Duration override forces a duration. Optional. The default is the natural length of all media sources combined. type can be crop or stretch -->
+        <MaxDuration type="crop">10</MaxDuration> <!-- Duration override forces a duration. Optional. The default is the natural length of all media sources combined. type can be crop or stretch -->
             
             <!-- Transition type for the transition into the next clip -->
         <TransitionType>fade</TransitionType> <!-- Optional -->
@@ -52,6 +52,7 @@
             <Clip>
                 <Media type="Video">
                     <FilePath>myname.mp4</FilePath> <!-- Mandatory -->
+                    <Duration>-1</Duration>
                 </Media> 
             </Clip>
         </Chapter>
@@ -75,7 +76,7 @@
                 <Description>media description</Description>i <!-- used to find the media -->
                 <Script>SCRIPT TEXT HERE</Script><!-- Optional - for CC or subtitles -->
                 <StartTime>0</StartTime> <!-- Optional default is 0 -->
-                <Duration>8</Duration> <!-- Optional - Use natural media length as default -->
+                <Duration>-1</Duration> <!-- Mandatory use -1 for media's natural length -->
                 <Volume>100</Volume> <!-- Optional, default is 100 --> 
                 <Position>Overlay</Position> <!-- all media types with a visual part may have this property. Positions may be Overlay or PiP with a location. default is Overlay-->
             </Media>
@@ -86,7 +87,7 @@
                 <Script>SCRIPT TEXT OR NOTES HERE</Script><!-- Optional - for CC or subtitles. encase in brackets. -->
                 <Description>About the image</Description> <!-- all media types may have a description -->
                 <StartTime>2</StartTime> <!-- Optional -->
-                <Duration>6</Duration> <!-- Required -->
+                <Duration>6</Duration> <!-- Required   -1 is the full length of the clip-->
                 <Position>PiP:TopRight</Position>
             </Media>
               
@@ -94,8 +95,8 @@
             <Media type="Audio">
                 <FilePath>audio.mp3</FilePath> <!-- Mandatory -->
                 <Script>SCRIPT TEXT HERE</Script><!-- Optional - for CC or subtitles -->
-                <StartTime>3</StartTime> <!-- Optional -->
-                <Duration>5</Duration> <!-- Optional -->
+                <StartTime>0</StartTime> <!-- Optional -->
+                <Duration>-1</Duration>
                 <Volume>100</Volume> <!-- Optional, default is 100 -->
             </Media>
             
@@ -103,7 +104,7 @@
             <Media type="TTS">
                 <Script>Hello, world!</Script> <!-- Mandatory -->
                 <StartTime>1</StartTime> <!-- Optional -->
-                <Duration>7</Duration> <!-- Optional -->
+                <Duration>-1</Duration> <!-- Mandarory -->
                 <FilePath>tts_audio1.wav</FilePath> <!-- Optional auto-generate with a unique predictable filename such as an md5sum the <Script> content.--> 
                 <UseForCC>False</UseForCC> <!-- Optional all media types may have this. default is True. `-->
                 <Volume>100</Volume> <!-- Optional, default is 100 -->
@@ -113,7 +114,7 @@
             <Media type="TextOverlay">
                 <Text>Overlay text</Text> <!-- Mandatory should to be added to CC or sub in brackets. -->
                 <StartTime>4</StartTime> <!-- Optional -->
-                <Duration>4</Duration> <!-- Optional -->
+                <Duration>-1</Duration>xi<!-- -1is full length of clip -->
                 <FontSize>24</FontSize> <!-- Optional -->
                 <FontColor>#FFFFFF</FontColor> <!-- Optional -->
                 <FontFace>Arial</FontFace> <!-- Optional -->

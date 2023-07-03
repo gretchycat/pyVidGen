@@ -1,4 +1,5 @@
-import os, hashlib, subprocess, logging, colorlog, pprint, datetime, glob, shutil, requests
+import os, hashlib, subprocess, logging, colorlog, pprint, datetime, glob
+import shutil, requests, json
 from bs4 import BeautifulSoup
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -245,6 +246,22 @@ def generate_temp_filename(fnkey=None):
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     return f"temp_{timestamp}"
 
+def get_file_duration(file_path):
+    command = [
+        'ffprobe',
+        '-v',
+        'error',
+        '-show_entries',
+        'format=duration',
+        '-of',
+        'json',
+        file_path
+    ]
+    output = subprocess.check_output(command).decode('utf-8')
+    duration_data = json.loads(output)
+    duration = float(duration_data['format']['duration'])
+    return duration
+
 def parse_video_script(filename):
     tree = ET.parse(filename)
     root = tree.getroot()
@@ -283,16 +300,20 @@ def parse_video_script(filename):
         media_list = []
         for media_element in media_elements:
             media_dict = {"MediaType": media_element.get("type")}
-            for child in media_element:
-                media_dict[child.tag] = child.text
             if media_dict.get("MediaType") == "TTS":
                 if media_dict.get('FilePath')=="":
                     media_dict['FilePath']=generate_temp_filename()+".wav"
+
+            for child in media_element:
+                media_dict[child.tag] = child.text
             media_list.append(media_dict)
 
         clip_dict["Media"] = media_list
         clips.append(clip_dict)
     return clips
+
+def fix_durations(clips):
+    pass
 
 def check_missing_media(clips):
     """ also check for background audio file from global, chapter, clip """
@@ -311,6 +332,7 @@ def check_missing_media(clips):
                     missing+=get_missing_file(media_type, file_path, description, script)
                 if not file_exists(buffer_file):
                     missing+=get_missing_file(media_type, buffer_file, description, script)
+    fix_durations(clips)
     return missing
 
 def convert_file_format(input_file, output_file, output_format):
