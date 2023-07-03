@@ -1,4 +1,4 @@
-import os, hashlib, subprocess, logging, pprint, datetime, glob, shutil, requests
+import os, hashlib, subprocess, logging, colorlog, pprint, datetime, glob, shutil, requests
 from bs4 import BeautifulSoup
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -11,10 +11,30 @@ from urllib.parse import quote_plus
 #logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def setup_logging(log_file):
-    """
-    Configures logging settings to record events, errors, and status messages.
-    """
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filename=log_file)
+    # Create a formatter with color
+    formatter = colorlog.ColoredFormatter(
+        '%(log_color)s%(levelname)s:%(message)s',
+        log_colors={
+            'DEBUG': 'white',
+            'INFO': 'green',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': 'bold_red',
+        }
+    )
+
+    # Create a file handler for the log file
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setFormatter(formatter)
+
+    # Create a stream handler for stderr
+    stderr_handler = logging.StreamHandler()
+    stderr_handler.setLevel(logging.WARNING)
+    stderr_handler.setFormatter(formatter)
+
+    # Configure the root logger with the handlers
+    logging.root.handlers = [file_handler, stderr_handler]
+    logging.root.setLevel(logging.DEBUG)
 
 def execute_command(command):
     """
@@ -35,7 +55,6 @@ def search_images(search_query, num_images, output_directory):
     #search_images_google(search_query, num_images, output_directory)
     #search_images_bing(search_query, num_images, output_directory)
 
-pexels_API_KEY = "YOUR_API_KEY"
 pexels_API_KEY = "JMdcZ8E4lrykP2QSaZHNxuXKlJRRjmmlvBQRvgu5CrHnSI30BF7mGLI7"
 
 def search_images_pexels(query, num_images, output_directory):
@@ -76,8 +95,7 @@ def search_images_pexels(query, num_images, output_directory):
     else:
         print(f"Error occurred while searching images. Status code: {response.status_code}")
 
-pixabay_API_KEY = "YOUR_API_KEY"
-pixabay_API_KEY = "abcdefghijklmnopqrstuvwxyz"
+pixabay_API_KEY = "38036450-c3aaf7be223f4d01b66e68cae"
 
 def search_images_pixabay(query, num_images, output_directory):
     base_url = "https://pixabay.com/api/"
@@ -114,7 +132,6 @@ def search_images_pixabay(query, num_images, output_directory):
         print(f"Error occurred while searching images. Status code: {response.status_code}")
 
 def search_images_bing(search_query, num_images, output_directory):
-    # Prepare search query URL
     search_query_encoded = quote_plus(search_query)
     url = f"https://www.bing.com/images/search?q={search_query_encoded}"
 
@@ -150,7 +167,6 @@ def search_images_bing(search_query, num_images, output_directory):
     print(f"Downloaded {count} images to {output_directory}")
 
 def search_images_google(search_query, num_images, output_directory):
-    # Prepare search query URL
     search_query_encoded = quote_plus(search_query)
     url = f"https://www.google.com/search?q={search_query_encoded}&tbm=isch"
     # Send a GET request to Google Images
@@ -224,11 +240,8 @@ def get_missing_file(type, file_path, description, script):
     return 0
 
 def generate_temp_filename(fnkey=None):
-    # Add your code to generate a unique temporary filename here
-    # Example implementation: Use a timestamp-based filename
     if(fnkey):
-        return "temp_"+hashlib.md5(fnkey).hexdigest()
-    
+        return "temp_"+hashlib.md5(fnkey).hexdigest()    
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     return f"temp_{timestamp}"
 
@@ -331,11 +344,78 @@ def get_longest_media_duration(media_list):
             pass
     return longest_duration
 
-def generate_clip(xml_clip_data):
+def generate_clip(clip):
     """
     Generates a video clip based on the provided XML clip data,
     handling the positioning and timing of media elements within the clip.
     """
+    command = ['ffmpeg']
+
+    # Add background color input
+    command.extend([
+        '-f', 'lavfi',
+        '-i', f'color={clip["BackgroundColor"]}:size=1920x1080:duration={clip["Duration"]}'
+    ])
+
+    # Add media inputs
+    for media in clip['Media']:
+        media_type = media['MediaType']
+
+        if media_type == 'Video':
+            # Add video input with parameters
+            command.extend([
+                '-i', media['FilePath'],
+                '-vf', f'scale={media["Scaling"]}, rotate={media["Rotation"]}',
+                '-af', f'volume={media["Volume"]}',
+                '-vf', f'pad=1920:1080:{media["Position"]}'
+            ])
+
+        elif media_type == 'Image':
+            # Add image input with parameters
+            command.extend([
+                '-loop', '1',
+                '-i', media['FilePath'],
+                '-vf', f'scale={media["Scaling"]}',
+                '-af', f'volume={media["Volume"]}',
+                '-vf', f'pad=1920:1080:{media["Position"]}'
+            ])
+
+        elif media_type == 'Audio':
+            # Add audio input with parameters
+            command.extend([
+                '-i', media['FilePath'],
+                '-af', f'volume={media["Volume"]}'
+            ])
+
+        elif media_type == 'TTS':
+            # Handle TTS media type (implementation details depend on TTS generation)
+            # Add TTS audio input to the command with parameters
+            command.extend([
+                '-i', media['AudioBufferFile'],
+                '-af', f'volume={media["Volume"]}'
+            ])
+
+        elif media_type == 'TextOverlay':
+            # Ignore TextOverlay media type for now (implementation details depend on text overlay)
+            continue
+
+        elif media_type == 'Clips':
+            # Ignore Clips media type for now (implementation details depend on handling nested clips)
+            continue
+
+        elif media_type == 'Unknown':
+            # Log a warning for unknown media type
+            print(f"Warning: Unknown media type encountered in clip: {media}")
+
+    # Add output filename
+    command.extend([
+        '-c:v', 'libx264',
+        '-c:a', 'aac',
+        clip['ClipFileName']
+    ])
+
+    return execute_command(command)
+
     #For Video:
     command = [
         "ffmpeg",
@@ -410,21 +490,84 @@ def generate_clip(xml_clip_data):
         "output.mp4"
     ]
 
-    # Implement clip generation logic based on XML data
-
-def concatenate_clips(clips_list, background_audio_file, output_file):
-    """
-    Concatenates the video clips from a list into a final video,
-    overlays the background audio, and saves it to the output file.
-    """
-    # Implement clip concatenation and background audio merging logic using FFmpeg
-
-def create_subtitle_track(clips_list, output_file):
+def generate_srt(clips, filename):
     """
     Creates a subtitle track for the video based on the durations of the clips
     and saves it to the output file.
     """
-    # Implement subtitle track creation logic
+    with open(filename, 'w') as f:
+        count = 1
+        for clip in clips:
+            start_time = clip['StartTime']
+            end_time = int(start_time) + int(clip['Duration'])
+            subtitle = clip['Script']
+
+            f.write(str(count) + '\n')
+            f.write(start_time + ' --> ' + str(end_time) + '\n')
+            f.write(subtitle + '\n')
+            f.write('\n')
+
+            count += 1
+        f.close()
+
+def join_clips(clips, background_audio_file, sub_file, output_file):
+    command = ['ffmpeg']
+    inputs = []
+
+    # Add input command for subtitle
+    if sub_file:
+        inputs.append(f'-subtitles {sub_file}')
+
+    # Add input command for background audio
+    if background_audio_file:
+        inputs.append(f'-i {background_audio_file}')
+
+    # Add input commands for each clip
+    for i, clip in enumerate(clips):
+        inputs.append(f'-i {clip["ClipFileName"]}')
+
+        # Add transition command between clips if not the last clip
+        if i < len(clips) - 1:
+            transition_type = clip['TransitionType']
+            transition_time = clip['TransitionTime']
+
+            # Add transition filter command
+            command.extend([
+                '-filter_complex',
+                f'[{i}:v]trim=0:{clip["Duration"]} [v{i}]; '
+                f'[{i+1}:v]trim=0:{transition_time},setpts=PTS-STARTPTS+{clip["Duration"]}/TB,'
+                f'format=yuva420p,fade=t=out:st=0:d={transition_time}:alpha=1 [v{i+1}]; '
+                f'[v{i}][v{i+1}]overlay=eof_action=pass:repeatlast=1[v]'
+            ])
+
+            # Add audio transition command
+            command.extend([
+                '-af',
+                f'atrim=0:{clip["Duration"]}, asetpts=PTS-STARTPTS, afade=t=out:st=0:d={transition_time},'
+                f'atrim=0:{transition_time}, asetpts=PTS-STARTPTS+{clip["Duration"]}/TB [a{i+1}]'
+            ])
+        else:
+            # Add audio command for the last clip without transition
+            command.extend([
+                '-map', f'{i+1}:a',
+                '-c:a', 'copy'
+            ])
+
+    # Concatenate video and audio streams
+    command.extend([
+        '-map', '0:a',
+        '-map', '[v]',
+        '-map', '[a1]',
+        '-c:v', 'libx264',
+        '-c:a', 'aac',
+        output_file
+    ])
+
+    # Join input commands and return the final command
+    command.extend(inputs)
+
+    return execute_command(command)
+
 def main():
     parser=OptionParser(usage="usage: %prog [options] xmlVideoScript.xml")
     parser.add_option("-c", "--check", dest="check", default=False,
@@ -442,43 +585,22 @@ def main():
     # Log file
     log_file = basefn+".log"
     # Set up logging
+    sub_file = basefn+".srt"
     setup_logging(log_file)
 
     #try:
     if True:
         clips = parse_video_script(xml_file)
-        for clip in clips:
-            pprint.pprint(clip)
-
+        pprint.pprint(clips)
         missing=check_missing_media(clips)
         if(missing):
             logging.error(f'There are {missing} missing media files.')
         else:
-            pass
-        # Parse the XML file
-        #xml_data = parse_xml_file(xml_file)
-        #print(ET.tostring(xml_data, encoding="unicode"))
-        # Generate TTS audio buffers
-#        for clip in xml_data['clips']:
-#            for media in clip['media']:
-#                if media['type'] == 'TTS':
-#                    generate_tts_audio_buffer(media['content'], media['AudioBufferFile'])
+            for clip in clips: 
+                generate_clip(clip)
 
-        # Generate video clips
-#        clips_list = []
-#        for clip in xml_data['clips']:
-#            generated_clip = generate_clip(clip)
-#            clips_list.append(generated_clip)
-
-        # Concatenate clips and merge background audio
-#        concatenate_clips(clips_list, xml_data['BackgroundMusic'], output_file)
-
-        # Create subtitle track
-#        create_subtitle_track(clips_list, output_file)
-
-            logging.info("Video generation completed successfully.")
-#    except Exception as e:
-#        logging.error(f"Error during video generation: {e}")
+            create_subtitle_track(clips, sub_file)
+            join_clips(clips, None, sub_file, output_file)
 
 if __name__ == "__main__":
     main()
