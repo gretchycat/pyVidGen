@@ -1,54 +1,186 @@
-import os, hashlib, subprocess, logging, pprint, datetime, glob, shutil
-import requests
+import os, hashlib, subprocess, logging, pprint, datetime, glob, shutil, requests
 from bs4 import BeautifulSoup
 import urllib.parse
 import xml.etree.ElementTree as ET
 from optparse import OptionParser
 from gtts import gTTS
 from imageSelect import imageSelect
+from urllib.parse import quote_plus
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Function to search and download images from Google Images
-def search_and_download_images(query, num_images, destination_dir):
-    # Create the destination directory if it doesn't exist
-    os.makedirs(destination_dir, exist_ok=True)
+def setup_logging(log_file):
+    """
+    Configures logging settings to record events, errors, and status messages.
+    """
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filename=log_file)
 
-    # Prepare the search query and URL
-    search_query = urllib.parse.quote(query)
-    url = f"https://www.google.com/search?q={search_query}&tbm=isch"
+def execute_command(command):
+    """
+    Executes a command in the system and logs the command line and output.
+    """
+    try:
+        logging.info(f"Executing command: {command}")
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        logging.info(f"Command output: {result.stdout.strip()}")
+        if result.stderr:
+            logging.error(f"Command error: {result.stderr.strip()}")
+    except Exception as e:
+        logging.error(f"Error executing command: {e}")
 
-    # Send a GET request to Google Images
+def search_images(search_query, num_images, output_directory):
+    search_images_pexels(search_query, num_images, output_directory)
+    search_images_pixabay(search_query, num_images, output_directory)
+    #search_images_google(search_query, num_images, output_directory)
+    #search_images_bing(search_query, num_images, output_directory)
+
+pexels_API_KEY = "YOUR_API_KEY"
+pexels_API_KEY = "JMdcZ8E4lrykP2QSaZHNxuXKlJRRjmmlvBQRvgu5CrHnSI30BF7mGLI7"
+
+def search_images_pexels(query, num_images, output_directory):
+    base_url = "https://api.pexels.com/v1/search"
+    headers = {"Authorization": pexels_API_KEY}
+    params = {"query": query, "per_page": num_images}
+
+    response = requests.get(base_url, headers=headers, params=params)
+
+    if response.status_code == 200:
+        data = response.json()
+        photos = data.get("photos", [])
+
+        if not photos:
+            print("No images found.")
+            return
+
+        # Create output directory if it doesn't exist
+        os.makedirs(output_directory, exist_ok=True)
+
+        # Download and save images
+        for photo in photos:
+            image_url = photo["src"]["original"]
+            image_id = photo["id"]
+            image_extension = image_url.split(".")[-1]
+            image_filename = f"pexels_{image_id}.{image_extension}"
+            image_path = os.path.join(output_directory, image_filename)
+
+            response = requests.get(image_url)
+            if response.status_code == 200:
+                with open(image_path, "wb") as file:
+                    file.write(response.content)
+                print(f"Downloaded image: {image_filename}")
+            else:
+                print(f"Error downloading image {image_filename}. Status code: {response.status_code}")
+
+        print(f"{num_images} images downloaded to {output_directory}")
+    else:
+        print(f"Error occurred while searching images. Status code: {response.status_code}")
+
+pixabay_API_KEY = "YOUR_API_KEY"
+pixabay_API_KEY = "abcdefghijklmnopqrstuvwxyz"
+
+def search_images_pixabay(query, num_images, output_directory):
+    base_url = "https://pixabay.com/api/"
+    params = {
+        "key": pixabay_API_KEY,
+        "q": query,
+        "per_page": num_images
+    }
+    response = requests.get(base_url, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        images = data.get("hits", [])
+        if not images:
+            print("No images found.")
+            return
+        # Create output directory if it doesn't exist
+        os.makedirs(output_directory, exist_ok=True)
+        # Download and save images
+        for i, image in enumerate(images):
+            image_url = image["largeImageURL"]
+            image_id = image["id"]
+            image_extension = image_url.split(".")[-1]
+            image_filename = f"pixabay_{image_id}.{image_extension}"
+            image_path = os.path.join(output_directory, image_filename)
+            response = requests.get(image_url)
+            if response.status_code == 200:
+                with open(image_path, "wb") as file:
+                    file.write(response.content)
+                print(f"Downloaded image {i+1}/{num_images}: {image_filename}")
+            else:
+                print(f"Error downloading image {i+1}/{num_images}. Status code: {response.status_code}")
+        print(f"{num_images} images downloaded to {output_directory}")
+    else:
+        print(f"Error occurred while searching images. Status code: {response.status_code}")
+
+def search_images_bing(search_query, num_images, output_directory):
+    # Prepare search query URL
+    search_query_encoded = quote_plus(search_query)
+    url = f"https://www.bing.com/images/search?q={search_query_encoded}"
+
+    # Send a GET request to Bing Images
     response = requests.get(url)
 
-    # Parse the HTML response using BeautifulSoup
-    soup = BeautifulSoup(response.text, 'html.parser')
+    # Create BeautifulSoup object
+    soup = BeautifulSoup(response.content, 'html.parser')
 
-    # Find all image elements on the page
+    # Find all image elements
     image_elements = soup.find_all('img')
 
-    # Iterate over the specified number of images or until there are no more images available
+    # Create output directory if it doesn't exist
+    os.makedirs(output_directory, exist_ok=True)
+
+    # Download and save images
     count = 0
-    for img in image_elements:
-        if count == num_images:
+    for image in image_elements:
+        if count >= num_images:
             break
 
+        if 'src' in image.attrs:
+            image_url = image['src']
+            try:
+                response = requests.get(image_url)
+                image_path = os.path.join(output_directory, f"bing_image{count}.jpg")
+                with open(image_path, 'wb') as file:
+                    file.write(response.content)
+                count += 1
+            except Exception as e:
+                print(f"Error downloading image: {e}")
+
+    print(f"Downloaded {count} images to {output_directory}")
+
+def search_images_google(search_query, num_images, output_directory):
+    # Prepare search query URL
+    search_query_encoded = quote_plus(search_query)
+    url = f"https://www.google.com/search?q={search_query_encoded}&tbm=isch"
+    # Send a GET request to Google Images
+    response = requests.get(url)
+    # Create BeautifulSoup object
+    soup = BeautifulSoup(response.content, 'html.parser')
+    # Find all image elements
+    image_elements = soup.find_all('img')
+    # Create output directory if it doesn't exist
+    os.makedirs(output_directory, exist_ok=True)
+    # Download and save full-resolution images
+    count = 0
+    for image in image_elements:
+        if count >= num_images:
+            break
+        if 'src' in image.attrs:
+            image_url = image['src']
+        elif 'data-src' in image.attrs:
+            image_url = image['data-src']
+        else:
+            continue
         try:
-            # Extract the image URL
-            image_url = img['src']
-
-            # Download the image and save it to the destination directory
-            image_name = f"image{count+1}.jpg"  # You can modify the image name as desired
-            image_path = os.path.join(destination_dir, image_name)
-            urllib.request.urlretrieve(image_url, image_path)
-
-            print(f"Downloaded {image_name}")
-
-            # Increment the count of downloaded images
+            response = requests.get(image_url)
+            image_path = os.path.join(output_directory, f"google_image{count}.jpg")
+            with open(image_path, 'wb') as file:
+                file.write(response.content)
             count += 1
         except Exception as e:
-            print(f"Error downloading image: {str(e)}")
+            print(f"Error downloading image: {e}")
+    print(f"Downloaded {count} images to {output_directory}")
 
 def generate_tts_audio_buffer(audio_buffer_file, text_content):
     """
@@ -68,50 +200,37 @@ def file_exists(file_path):
         return os.path.isfile(file_path)
     return None
 
-def convert_file_format(input_file, output_file, output_format):
-    """
-    Converts a media file from one format to another using FFmpeg.
-    """
-    command = f"ffmpeg -i {input_file} -y {output_file}"
-    execute_command(command)
+def get_missing_file(type, file_path, description, script):
+    if file_path:
+        log=logging.info
+        verb="Acquiring"
+        log(f"{verb} {type}: {file_path}\n\tDescription: {description}\n\tScript: {script}")
+        if type=="TTS": 
+            verb="Generated"
+            generate_tts_audio_buffer(file_path, script)
+        elif type=="Image":
+            verb="Found"
+            search_images(description, 20, 'image_temp')
+            print(';getting image')
+            imgs=imageSelect()
+            imgs.interface(file_path, glob.glob('image_temp/*'), description)
+            shutil.rmtree('image_temp')
+        missing=0 if file_exists(file_path) else 1
+        if missing>0:
+            verb="Missing"
+            log=logging.warning
+        log(f"{verb} {type}: {file_path}")
+        return missing
+    return 0
 
-def adjust_volume(input_file, output_file, volume_level):
-    """
-    Adjusts the volume level of an audio file using FFmpeg.
-    """
-    command = f"ffmpeg -i {input_file} -af 'volume={volume_level}' -y {output_file}"
-    execute_command(command)
-
-def get_longest_media_duration(media_list):
-    """
-    Returns the duration of the longest piece of media with audio
-    (video, audio, or TTS) from a list of media elements.
-    """
-    longest_duration = 0
-    for media in media_list:
-        if 'Duration' in media:
-            duration = media['Duration']
-            if duration > longest_duration:
-                longest_duration = duration
-        else:
-            """Also get natural durations"""
-            """set 'duration' to the natural duration"""
-            pass
-    return longest_duration
-
-def generate_clip(xml_clip_data):
-    """
-    Generates a video clip based on the provided XML clip data,
-    handling the positioning and timing of media elements within the clip.
-    """
-    # Implement clip generation logic based on XML data
-
-def concatenate_clips(clips_list, background_audio_file, output_file):
-    """
-    Concatenates the video clips from a list into a final video,
-    overlays the background audio, and saves it to the output file.
-    """
-    # Implement clip concatenation and background audio merging logic using FFmpeg
+def generate_temp_filename(fnkey=None):
+    # Add your code to generate a unique temporary filename here
+    # Example implementation: Use a timestamp-based filename
+    if(fnkey):
+        return "temp_"+hashlib.md5(fnkey).hexdigest()
+    
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    return f"temp_{timestamp}"
 
 def parse_video_script(filename):
     tree = ET.parse(filename)
@@ -162,15 +281,6 @@ def parse_video_script(filename):
         clips.append(clip_dict)
     return clips
 
-def generate_temp_filename(fnkey=None):
-    # Add your code to generate a unique temporary filename here
-    # Example implementation: Use a timestamp-based filename
-    if(fnkey):
-        return "temp_"+hashlib.md5(fnkey).hexdigest()
-    
-    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    return f"temp_{timestamp}"
-
 def check_missing_media(clips):
     """ also check for background audio file from global, chapter, clip """
     missing=0
@@ -190,30 +300,50 @@ def check_missing_media(clips):
                     missing+=get_missing_file(media_type, buffer_file, description, script)
     return missing
 
-def get_missing_file(type, file_path, description, script):
-    if file_path:
-        log=logging.info
-        verb="Acquiring"
-        log(f"{verb} {type}: {file_path}\n\tDescription: {description}\n\tScript: {script}")
-        if type=="TTS": 
-            verb="Generated"
-            generate_tts_audio_buffer(file_path, script)
-        elif type=="Image":
-            verb="Found"
-            search_and_download_images(description, 20, 'image_temp')
-            print(';getting image')
-            imgs=imageSelect()
+def convert_file_format(input_file, output_file, output_format):
+    """
+    Converts a media file from one format to another using FFmpeg.
+    """
+    command = f"ffmpeg -i {input_file} -y {output_file}"
+    execute_command(command)
 
-            imgs.interface(file_path, glob.glob('image_temp/*'), description)
-            shutil.rmtree('image_temp')
-            #rm -rf image_temp
-        missing=0 if file_exists(file_path) else 1
-        if missing>0:
-            verb="Missing"
-            log=logging.warning
-        log(f"{verb} {type}: {file_path}")
-        return missing
-    return 0
+def adjust_volume(input_file, output_file, volume_level):
+    """
+    Adjusts the volume level of an audio file using FFmpeg.
+    """
+    command = f"ffmpeg -i {input_file} -af 'volume={volume_level}' -y {output_file}"
+    execute_command(command)
+
+def get_longest_media_duration(media_list):
+    """
+    Returns the duration of the longest piece of media with audio
+    (video, audio, or TTS) from a list of media elements.
+    """
+    longest_duration = 0
+    for media in media_list:
+        if 'Duration' in media:
+            duration = media['Duration']
+            if duration > longest_duration:
+                longest_duration = duration
+        else:
+            """Also get natural durations"""
+            """set 'duration' to the natural duration"""
+            pass
+    return longest_duration
+
+def generate_clip(xml_clip_data):
+    """
+    Generates a video clip based on the provided XML clip data,
+    handling the positioning and timing of media elements within the clip.
+    """
+    # Implement clip generation logic based on XML data
+
+def concatenate_clips(clips_list, background_audio_file, output_file):
+    """
+    Concatenates the video clips from a list into a final video,
+    overlays the background audio, and saves it to the output file.
+    """
+    # Implement clip concatenation and background audio merging logic using FFmpeg
 
 def create_subtitle_track(clips_list, output_file):
     """
@@ -221,25 +351,6 @@ def create_subtitle_track(clips_list, output_file):
     and saves it to the output file.
     """
     # Implement subtitle track creation logic
-def setup_logging(log_file):
-    """
-    Configures logging settings to record events, errors, and status messages.
-    """
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filename=log_file)
-
-def execute_command(command):
-    """
-    Executes a command in the system and logs the command line and output.
-    """
-    try:
-        logging.info(f"Executing command: {command}")
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        logging.info(f"Command output: {result.stdout.strip()}")
-        if result.stderr:
-            logging.error(f"Command error: {result.stderr.strip()}")
-    except Exception as e:
-        logging.error(f"Error executing command: {e}")
-
 def main():
     parser=OptionParser(usage="usage: %prog [options] xmlVideoScript.xml")
     parser.add_option("-c", "--check", dest="check", default=False,
