@@ -257,8 +257,16 @@ def get_file_duration(file_path):
         'json',
         file_path
     ]
+    
+    print('\x1b[1;32m',end='')
+    pprint.pprint(command)
     output = subprocess.check_output(command).decode('utf-8')
+
     duration_data = json.loads(output)
+
+    print('\x1b[1;33m',end='')
+    pprint.pprint(output)
+    print('\x1b[0m',end='')
     duration = float(duration_data['format']['duration'])
     return duration
 
@@ -313,6 +321,39 @@ def parse_video_script(filename):
     return clips
 
 def fix_durations(clips):
+    for clip in clips:
+        passes=0
+        clipLength=0.0
+        while passes<2:
+            for media in clip['Media']:
+                print('\x1b[1;31m',end='')
+                pprint.pprint(media)
+                print('\x1b[0m',end='')
+                if not media.get('Duration'):
+                    media['Duration']=-1
+                if not media.get('StartTime'):
+                    media['StartTime']=0
+                if float(media['Duration'])==-1.0:
+                    print('\x1b[1;35m1')
+                    if media['MediaType']=='Image' or media['MediaType'] == 'TextOverlay':
+                        print('\x1b[1;35m2')
+                        if passes>0:
+                            print('\x1b[1;35m3')
+                            media['Duration']=clipLength-float(media['StartTime'])
+                            logging.debug(f'Setting max Duration '+str(media['Duration']))
+                    else:
+                        print('\x1b[1;35m4')
+                        if media.get('FilePath'):
+                            print('\x1b[1;35m6')
+                            media['Duration']=get_file_duration(media['FilePath'])
+                            logging.debug(f'Setting media Duration '+str(media['Duration']))
+                            clipLength=max(float(media['StartTime'])+float(media['Duration']), clipLength)
+                else:
+                    clipLength=max(float(media['StartTime'])+float(media['Duration']), clipLength)
+
+            passes=passes+1
+            clip['Duration']=clipLength
+            logging.debug(f'Setting clip Duration '+str(clip['Duration']))
     pass
 
 def check_missing_media(clips):
@@ -348,23 +389,6 @@ def adjust_volume(input_file, output_file, volume_level):
     """
     command = f"ffmpeg -i {input_file} -af 'volume={volume_level}' -y {output_file}"
     execute_command(command)
-
-def get_longest_media_duration(media_list):
-    """
-    Returns the duration of the longest piece of media with audio
-    (video, audio, or TTS) from a list of media elements.
-    """
-    longest_duration = 0
-    for media in media_list:
-        if 'Duration' in media:
-            duration = media['Duration']
-            if duration > longest_duration:
-                longest_duration = duration
-        else:
-            """Also get natural durations"""
-            """set 'duration' to the natural duration"""
-            pass
-    return longest_duration
 
 def generate_clip(clip):
     """
@@ -594,7 +618,6 @@ def main():
     parser=OptionParser(usage="usage: %prog [options] xmlVideoScript.xml")
     parser.add_option("-c", "--check", dest="check", default=False,
             help="Don't render, only check the XML and find missing media.")
- 
     (options, args)=parser.parse_args()
     if len(args)==0:
         parser.print_help()
@@ -609,18 +632,18 @@ def main():
     # Set up logging
     sub_file = basefn+".srt"
     setup_logging(log_file)
-
     #try:
     if True:
         clips = parse_video_script(xml_file)
-        pprint.pprint(clips)
         missing=check_missing_media(clips)
+        print('\x1b[1m',end='')
+        pprint.pprint(clips)
+        print('\x1b[0m',end='')
         if(missing):
             logging.error(f'There are {missing} missing media files.')
         else:
             for clip in clips: 
                 generate_clip(clip)
-
             create_subtitle_track(clips, sub_file)
             join_clips(clips, None, sub_file, output_file)
 
