@@ -356,6 +356,9 @@ def fix_durations(clips):
             logging.debug(f'Setting clip Duration '+str(clip['Duration']))
     pass
 
+def fix_placement(clips):
+    pass
+
 def check_missing_media(clips):
     """ also check for background audio file from global, chapter, clip """
     missing=0
@@ -374,6 +377,7 @@ def check_missing_media(clips):
                 if not file_exists(buffer_file):
                     missing+=get_missing_file(media_type, buffer_file, description, script)
     fix_durations(clips)
+    fix_placement(clips)
     return missing
 
 def convert_file_format(input_file, output_file, output_format):
