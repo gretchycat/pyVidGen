@@ -10,6 +10,8 @@ from urllib.parse import quote_plus
 
 # Set up logging
 #logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+pexels_API_KEY = "JMdcZ8E4lrykP2QSaZHNxuXKlJRRjmmlvBQRvgu5CrHnSI30BF7mGLI7"
+pixabay_API_KEY = "38036450-c3aaf7be223f4d01b66e68cae"
 
 def setup_logging(log_file):
     # Create a formatter with color
@@ -60,8 +62,6 @@ def search_images(search_query, num_images, output_directory):
     #search_images_google(search_query, num_images, output_directory)
     #search_images_bing(search_query, num_images, output_directory)
 
-pexels_API_KEY = "JMdcZ8E4lrykP2QSaZHNxuXKlJRRjmmlvBQRvgu5CrHnSI30BF7mGLI7"
-
 def search_images_pexels(query, num_images, output_directory):
     base_url = "https://api.pexels.com/v1/search"
     headers = {"Authorization": pexels_API_KEY}
@@ -99,8 +99,6 @@ def search_images_pexels(query, num_images, output_directory):
         print(f"{num_images} images downloaded to {output_directory}")
     else:
         print(f"Error occurred while searching images. Status code: {response.status_code}")
-
-pixabay_API_KEY = "38036450-c3aaf7be223f4d01b66e68cae"
 
 def search_images_pixabay(query, num_images, output_directory):
     base_url = "https://pixabay.com/api/"
@@ -247,7 +245,7 @@ def get_missing_file(type, file_path, description, script):
 def generate_temp_filename(fnkey=None):
     if(fnkey):
         return "temp_"+hashlib.md5(fnkey).hexdigest()    
-    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
     return f"temp_{timestamp}"
 
 def get_file_duration(file_path):
