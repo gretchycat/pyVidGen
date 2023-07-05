@@ -13,25 +13,29 @@ from urllib.parse import quote_plus
 
 def setup_logging(log_file):
     # Create a formatter with color
-    formatter = colorlog.ColoredFormatter(
+    stderr_formatter = colorlog.ColoredFormatter(
         '%(log_color)s%(levelname)s:%(message)s',
         log_colors={
-            'DEBUG': 'white',
-            'INFO': 'green',
-            'WARNING': 'yellow',
+            'DEBUG': 'bold_blue',
+            'INFO': 'bold_green',
+            'WARNING': 'bold_yellow',
             'ERROR': 'red',
             'CRITICAL': 'bold_red',
         }
     )
+    log_formatter = colorlog.ColoredFormatter(
+        '%(levelname)s:%(message)s'
+    )
+
 
     # Create a file handler for the log file
     file_handler = logging.FileHandler(log_file)
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(log_formatter)
 
     # Create a stream handler for stderr
     stderr_handler = logging.StreamHandler()
-    stderr_handler.setLevel(logging.WARNING)
-    stderr_handler.setFormatter(formatter)
+    stderr_handler.setLevel(logging.INFO)
+    stderr_handler.setFormatter(stderr_formatter)
 
     # Configure the root logger with the handlers
     logging.root.handlers = [file_handler, stderr_handler]
@@ -163,9 +167,9 @@ def search_images_bing(search_query, num_images, output_directory):
                     file.write(response.content)
                 count += 1
             except Exception as e:
-                print(f"Error downloading image: {e}")
+                logging.warning(f"Error downloading image: {e}")
 
-    print(f"Downloaded {count} images to {output_directory}")
+    logging.info(f"Downloaded {count} images to {output_directory}")
 
 def search_images_google(search_query, num_images, output_directory):
     search_query_encoded = quote_plus(search_query)
@@ -196,8 +200,8 @@ def search_images_google(search_query, num_images, output_directory):
                 file.write(response.content)
             count += 1
         except Exception as e:
-            print(f"Error downloading image: {e}")
-    print(f"Downloaded {count} images to {output_directory}")
+            logging.warning(f"Error downloading image: {e}")
+    logging.info(f"Downloaded {count} images to {output_directory}")
 
 def generate_tts_audio_buffer(audio_buffer_file, text_content):
     """
@@ -228,7 +232,7 @@ def get_missing_file(type, file_path, description, script):
         elif type=="Image":
             verb="Found"
             search_images(description, 20, 'image_temp')
-            print(';getting image')
+            #print(';getting image')
             imgs=imageSelect()
             imgs.interface(file_path, glob.glob('image_temp/*'), description)
             shutil.rmtree('image_temp')
@@ -258,15 +262,15 @@ def get_file_duration(file_path):
         file_path
     ]
     
-    print('\x1b[1;32m',end='')
-    pprint.pprint(command)
+    #print('\x1b[1;32m',end='')
+    #pprint.pprint(command)
     output = subprocess.check_output(command).decode('utf-8')
 
     duration_data = json.loads(output)
 
-    print('\x1b[1;33m',end='')
-    pprint.pprint(output)
-    print('\x1b[0m',end='')
+    #print('\x1b[1;33m',end='')
+    #pprint.pprint(output)
+    #print('\x1b[0m',end='')
     duration = float(duration_data['format']['duration'])
     return duration
 
@@ -321,30 +325,26 @@ def parse_video_script(filename):
     return clips
 
 def fix_durations(clips):
+    totalDuration=0
     for clip in clips:
         passes=0
         clipLength=0.0
         while passes<2:
             for media in clip['Media']:
-                print('\x1b[1;31m',end='')
-                pprint.pprint(media)
-                print('\x1b[0m',end='')
+                #print('\x1b[1;31m',end='')
+                #pprint.pprint(media)
+                #print('\x1b[0m',end='')
                 if not media.get('Duration'):
                     media['Duration']=-1
                 if not media.get('StartTime'):
                     media['StartTime']=0
                 if float(media['Duration'])==-1.0:
-                    print('\x1b[1;35m1')
                     if media['MediaType']=='Image' or media['MediaType'] == 'TextOverlay':
-                        print('\x1b[1;35m2')
                         if passes>0:
-                            print('\x1b[1;35m3')
                             media['Duration']=clipLength-float(media['StartTime'])
                             logging.debug(f'Setting max Duration '+str(media['Duration']))
                     else:
-                        print('\x1b[1;35m4')
                         if media.get('FilePath'):
-                            print('\x1b[1;35m6')
                             media['Duration']=get_file_duration(media['FilePath'])
                             logging.debug(f'Setting media Duration '+str(media['Duration']))
                             clipLength=max(float(media['StartTime'])+float(media['Duration']), clipLength)
@@ -353,22 +353,28 @@ def fix_durations(clips):
 
             passes=passes+1
             clip['Duration']=clipLength
+            clip['StartTime']=totalDuration
+            totalDuration+=clipLength
             logging.debug(f'Setting clip Duration '+str(clip['Duration']))
     pass
 
 def fix_placement(clips):
-    pass
+    defaultPosition = { "x":0, "y":0, "width":1920, "height":1080, "rotation":0.0 }
+    return defaultPosition
 
 def check_missing_media(clips):
     """ also check for background audio file from global, chapter, clip """
     missing=0
     for clip in clips:
+        full_script=""
         media_list = clip.get("Media", [])
         for media in media_list:
+            media["Position"]=fix_placement(media)
             media_type = media.get("MediaType")
             file_path = media.get("FilePath")
             buffer_file = media.get("BufferFile")
             script = media.get('Script')
+            full_script+=(script or "")+'\n'
             description = media.get("Description")
             if media_type:
                 # Process missing media
@@ -376,8 +382,8 @@ def check_missing_media(clips):
                     missing+=get_missing_file(media_type, file_path, description, script)
                 if not file_exists(buffer_file):
                     missing+=get_missing_file(media_type, buffer_file, description, script)
+        clip['Script']=full_script
     fix_durations(clips)
-    fix_placement(clips)
     return missing
 
 def convert_file_format(input_file, output_file, output_format):
@@ -412,51 +418,50 @@ def generate_clip(clip):
         media_type = media['MediaType']
 
         if media_type == 'Video':
-            # Add video input with parameters
             command.extend([
-                '-i', media['FilePath'],
-                '-vf', f'scale={media["Scaling"]}, rotate={media["Rotation"]}',
-                '-af', f'volume={media["Volume"]}',
-                '-vf', f'pad=1920:1080:{media["Position"]}'
+                "-i", media["FilePath"],
+                "-ss", str(media["StartTime"]),
+                "-t", str(media["Duration"]),
+                "-vf", f"scale={media['Position']['width']}:{media['Position']['height']},rotate={media['Position']['rotation']}",
+                "-af", f"volume={media.get('Volume', 100)}"
             ])
-
         elif media_type == 'Image':
-            # Add image input with parameters
             command.extend([
-                '-loop', '1',
-                '-i', media['FilePath'],
-                '-vf', f'scale={media["Scaling"]}',
-                '-af', f'volume={media["Volume"]}',
-                '-vf', f'pad=1920:1080:{media["Position"]}'
+                "-loop", "1",
+                "-i", media["FilePath"],
+                "-ss", str(media["StartTime"]),
+                "-t", str(media["Duration"]),
+                "-vf", f"scale={media['Position']['width']}:{media['Position']['height']},rotate={media['Position']['rotation']}"
             ])
-
         elif media_type == 'Audio':
-            # Add audio input with parameters
             command.extend([
-                '-i', media['FilePath'],
-                '-af', f'volume={media["Volume"]}'
+                "-i", media["FilePath"],
+                "-ss", str(media["StartTime"]),
+                "-t", str(media["Duration"]),
+                "-af", f"volume={media.get('Volume', 100)}"
             ])
-
         elif media_type == 'TTS':
-            # Handle TTS media type (implementation details depend on TTS generation)
-            # Add TTS audio input to the command with parameters
             command.extend([
-                '-i', media['AudioBufferFile'],
-                '-af', f'volume={media["Volume"]}'
+                "-f", "lavfi",
+                "-i", f"amovie=buffer:{media['FilePath']}:loop=0",
+                "-ss", str(media["StartTime"]),
+                "-t", str(media["Duration"]),
+                "-af", f"volume={media.get('Volume', 100)}"
             ])
-
         elif media_type == 'TextOverlay':
-            # Ignore TextOverlay media type for now (implementation details depend on text overlay)
-            continue
-
+            command.extend([
+                "-f", "lavfi",
+                "-i", f"color=c=black:s={media['Position']['width']}x{media['Position']['height']}:r=25:d={media['Duration']}",
+                "-vf", f"drawtext=text='{media['Text']}':fontsize={media['FontSize']}:fontcolor={media['FontColor']}:x={media['Position']['x']}:y={media['Position']['y']}:{media['FontEffect']}",
+                "-ss", str(media["StartTime"]),
+                "-t", str(media["Duration"])
+            ])
         elif media_type == 'Clips':
             # Ignore Clips media type for now (implementation details depend on handling nested clips)
             continue
-
-        elif media_type == 'Unknown':
+        else:
             # Log a warning for unknown media type
-            print(f"Warning: Unknown media type encountered in clip: {media}")
-
+            logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
     # Add output filename
     command.extend([
         '-c:v', 'libx264',
@@ -465,80 +470,6 @@ def generate_clip(clip):
     ])
 
     return execute_command(command)
-
-    #For Video:
-    command = [
-        "ffmpeg",
-        "-i", properties["FilePath"],
-        "-ss", str(properties["StartTime"]),
-        "-t", str(properties["Duration"]),
-        "-vf", f"scale={properties['Position']['width']}:{properties['Position']['height']},rotate={properties['Position']['rotation']}",
-        "-af", f"volume={properties.get('Volume', 100)}",
-        "-c:v", "libx264",
-        "-c:a", "aac",
-        "-strict", "-2",
-        "-y",  # Overwrite output file if it exists
-        "output.mp4"
-    ]
-
-    #For Image:
-    command = [
-        "ffmpeg",
-        "-loop", "1",
-        "-i", properties["FilePath"],
-        "-ss", str(properties["StartTime"]),
-        "-t", str(properties["Duration"]),
-        "-vf", f"scale={properties['Position']['width']}:{properties['Position']['height']},rotate={properties['Position']['rotation']}",
-        "-c:v", "libx264",
-        "-c:a", "aac",
-        "-strict", "-2",
-        "-y",  # Overwrite output file if it exists
-        "output.mp4"
-    ]
-
-    #For Audio:
-    command = [
-        "ffmpeg",
-        "-i", properties["FilePath"],
-        "-ss", str(properties["StartTime"]),
-        "-t", str(properties["Duration"]),
-        "-af", f"volume={properties.get('Volume', 100)}",
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-strict", "-2",
-        "-y",  # Overwrite output file if it exists
-        "output.mp4"
-    ]
-
-    #For TTS (Text-to-speech):
-    command = [
-        "ffmpeg",
-        "-f", "lavfi",
-        "-i", f"amovie=buffer:{properties['AudioBufferFile']}:loop=0",
-        "-ss", str(properties["StartTime"]),
-        "-t", str(properties["Duration"]),
-        "-af", f"volume={properties.get('Volume', 100)}",
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-strict", "-2",
-        "-y",  # Overwrite output file if it exists
-        "output.mp4"
-    ]
-
-    #For Text Overlay:
-    command = [
-        "ffmpeg",
-        "-f", "lavfi",
-        "-i", f"color=c=black:s={properties['Position']['width']}x{properties['Position']['height']}:r=25:d={properties['Duration']}",
-        "-vf", f"drawtext=text='{properties['Text']}':fontsize={properties['FontSize']}:fontcolor={properties['FontColor']}:x={properties['Position']['x']}:y={properties['Position']['y']}:{properties['FontEffect']}",
-        "-ss", str(properties["StartTime"]),
-        "-t", str(properties["Duration"]),
-        "-c:v", "libx264",
-        "-c:a", "aac",
-        "-strict", "-2",
-        "-y",  # Overwrite output file if it exists
-        "output.mp4"
-    ]
 
 def generate_srt(clips, filename):
     """
@@ -553,7 +484,7 @@ def generate_srt(clips, filename):
             subtitle = clip['Script']
 
             f.write(str(count) + '\n')
-            f.write(start_time + ' --> ' + str(end_time) + '\n')
+            f.write(str(start_time) + ' --> ' + str(end_time) + '\n')
             f.write(subtitle + '\n')
             f.write('\n')
 
@@ -648,7 +579,7 @@ def main():
         else:
             for clip in clips: 
                 generate_clip(clip)
-            create_subtitle_track(clips, sub_file)
+            generate_srt(clips, sub_file)
             join_clips(clips, None, sub_file, output_file)
 
 if __name__ == "__main__":

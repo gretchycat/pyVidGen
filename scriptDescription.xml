@@ -33,6 +33,7 @@
             
             <!-- Transition type for the transition into the next clip -->
         <TransitionType>fade</TransitionType> <!-- Optional -->
+        <TransitionTime>1.0</TransitionTime>
     </Defaults>
     
     <!-- Clips section -->
@@ -43,6 +44,7 @@
                 <BackgroundColor>#F00</BackgroundColor> <!-- Optional. default is #000 -->
                 <!-- Transition type for the transition into the chapter -->
                 <TransitionType>swipeleft</TransitionType> <!-- Optional -->
+                <TransitionTime>1.0</TransitionTime>
             </Defaults>
             <Info> <!-- Relevent Chapter metadata.Any tag may or may not exist -->
                 <!--These tags will be for the chapter metadata -->
