@@ -43,16 +43,35 @@ def setup_logging(log_file):
     logging.root.handlers = [file_handler, stderr_handler]
     logging.root.setLevel(logging.DEBUG)
 
+def translate_color(color):
+    if len(color) == 4 and color.startswith("#"):  # Handle 3-character color code
+        r = color[1]
+        g = color[2]
+        b = color[3]
+        return f"#{r}{r}{g}{g}{b}{b}"
+    else:
+        return color  # Return the color code as is if not in the expected format
+
+def format_time(seconds):
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = int(seconds % 60)
+    milliseconds = int((seconds % 1) * 1000)
+    return "{:02d}:{:02d}:{:02d},{:03d}".format(hours, minutes, seconds, milliseconds)
+
 def execute_command(command):
     """
     Executes a command in the system and logs the command line and output.
     """
     try:
-        logging.info(f"Executing command: {command}")
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        logging.info(f"Command output: {result.stdout.strip()}")
-        if result.stderr:
-            logging.error(f"Command error: {result.stderr.strip()}")
+        logging.info(f"Executing command: {' '.join(command)}")
+        result = subprocess.run(command, shell=False, capture_output=True, text=True)
+        if result.returncode==0:
+            logging.info(f"Command stdout: {result.stdout.strip()}")
+            logging.info(f"Command stderr: {result.stderr.strip()}")
+        else:
+            logging.error(f"Command stdout: {result.stdout.strip()}")
+            logging.error(f"Command stderr: {result.stderr.strip()}")
     except Exception as e:
         logging.error(f"Error executing command: {e}")
 
@@ -352,11 +371,12 @@ def fix_durations(clips):
             passes=passes+1
             clip['Duration']=clipLength
             clip['StartTime']=totalDuration
+            clip['Resolution']='1920x1080'
             totalDuration+=clipLength
             logging.debug(f'Setting clip Duration '+str(clip['Duration']))
     pass
 
-def fix_placement(clips):
+def fix_placement(media):
     defaultPosition = { "x":0, "y":0, "width":1920, "height":1080, "rotation":0.0 }
     return defaultPosition
 
@@ -365,6 +385,7 @@ def check_missing_media(clips):
     missing=0
     for clip in clips:
         full_script=""
+        clip['Position']=fix_placement(None)
         media_list = clip.get("Media", [])
         for media in media_list:
             media["Position"]=fix_placement(media)
@@ -372,7 +393,8 @@ def check_missing_media(clips):
             file_path = media.get("FilePath")
             buffer_file = media.get("BufferFile")
             script = media.get('Script')
-            full_script+=(script or "")+'\n'
+            if script and len(script)>0:
+                full_script+=(script or "")+'\n'
             description = media.get("Description")
             if media_type:
                 # Process missing media
@@ -398,6 +420,47 @@ def adjust_volume(input_file, output_file, volume_level):
     command = f"ffmpeg -i {input_file} -af 'volume={volume_level}' -y {output_file}"
     execute_command(command)
 
+def generate_clip_lib(clip):
+    # Create a list to store the input sources
+    inputs = []
+
+    # Add background color as input
+    if 'BackgroundColor' in clip:
+        background_color = translate_color(clip['BackgroundColor'])
+        inputs.append(ffmpeg.filter('color=c={0}:s={1}:duration={2}:f=lavfi'.format(background_color, clip['Resolution'], clip['Duration'])))
+
+    # Add other media types as input
+    for media in clip['Media']:
+        media_type = media['MediaType']
+        file_path = media['FilePath']
+        start_time = media['StartTime']
+        duration = media['Duration']
+        position = media['Position']
+        volume = media.get('Volume', '100%')
+        # Handle different media types
+        if media_type == 'Video':
+            inputs.append(ffmpeg.input(file_path, ss=start_time, t=duration).filter('scale',\
+                    w=position['width'], h=position['height']).filter('setpts',\
+                    'PTS-STARTPTS').filter('volume', volume))
+        elif media_type == 'Image':
+            inputs.append(ffmpeg.input(file_path, loop=1,\
+                    t=duration, fr=clip['FrameRate']).filter('scale',\
+                    w=position['width'], h=position['height']).filter('setpts',\
+                    'PTS-STARTPTS').filter('volume', volume))
+        elif media_type == 'Audio' or media_type=='TTS':
+            inputs.append(ffmpeg.input(file_path, ss=start_time, t=duration).filter('volume', volume))
+        elif media_type == 'TextOverlay':
+            inputs.append(ffmpeg.input('aevalsrc=0', t=duration).filter('volume', volume).output(file_path,\
+                    t=duration, vf="drawtext=text='{0}':fontsize={1}:fontcolor={2}:x={3}:y={4}".format(media['Text'], media['FontSize'],\
+                    translate_color(media['FontColor']), position['x'], position['y'])))
+    # Concatenate all the input sources
+    output = ffmpeg.concat(*inputs, v=1, a=1).output(clip['ClipFileName'],\
+            **{'c:v': 'libx264', 'c:a': 'aac', 'shortest': None,\
+            'vf': 'pad={0}:padcolor=black'.format(clip['Resolution']),\
+            'af': 'apad=pad_len=2*duration'})
+    # Run the FFmpeg command
+    ffmpeg.run(output, overwrite_output=True)
+
 def generate_clip(clip):
     """
     Generates a video clip based on the provided XML clip data,
@@ -407,8 +470,8 @@ def generate_clip(clip):
 
     # Add background color input
     command.extend([
-        '-f', 'lavfi',
-        '-i', f'color={clip["BackgroundColor"]}:size=1920x1080:duration={clip["Duration"]}'
+        '-v', 'info', '-f', 'lavfi',
+        '-i', f'color={translate_color(clip["BackgroundColor"])}:size=1920x1080:duration={clip["Duration"]}'
     ])
 
     # Add media inputs
@@ -417,40 +480,39 @@ def generate_clip(clip):
 
         if media_type == 'Video':
             command.extend([
+                #"-vf", f"scale={media['Position']['width']}:{media['Position']['height']},rotate={media['Position']['rotation']}",
+                #"-af", f"volume={media.get('Volume', 100)}",
                 "-i", media["FilePath"],
                 "-ss", str(media["StartTime"]),
                 "-t", str(media["Duration"]),
-                "-vf", f"scale={media['Position']['width']}:{media['Position']['height']},rotate={media['Position']['rotation']}",
-                "-af", f"volume={media.get('Volume', 100)}"
             ])
         elif media_type == 'Image':
             command.extend([
+                #"-vf", f"scale={media['Position']['width']}:{media['Position']['height']},rotate={media['Position']['rotation']}",
                 "-loop", "1",
                 "-i", media["FilePath"],
                 "-ss", str(media["StartTime"]),
                 "-t", str(media["Duration"]),
-                "-vf", f"scale={media['Position']['width']}:{media['Position']['height']},rotate={media['Position']['rotation']}"
             ])
         elif media_type == 'Audio':
             command.extend([
+                #"-af", f"volume={media.get('Volume', 100)}",
                 "-i", media["FilePath"],
                 "-ss", str(media["StartTime"]),
                 "-t", str(media["Duration"]),
-                "-af", f"volume={media.get('Volume', 100)}"
             ])
         elif media_type == 'TTS':
             command.extend([
-                "-f", "lavfi",
-                "-i", f"amovie=buffer:{media['FilePath']}:loop=0",
+                #"-af", f"volume={media.get('Volume', 100)}",
+                "-i", f"{media['FilePath']}",
                 "-ss", str(media["StartTime"]),
                 "-t", str(media["Duration"]),
-                "-af", f"volume={media.get('Volume', 100)}"
             ])
         elif media_type == 'TextOverlay':
             command.extend([
                 "-f", "lavfi",
                 "-i", f"color=c=black:s={media['Position']['width']}x{media['Position']['height']}:r=25:d={media['Duration']}",
-                "-vf", f"drawtext=text='{media['Text']}':fontsize={media['FontSize']}:fontcolor={media['FontColor']}:x={media['Position']['x']}:y={media['Position']['y']}:{media['FontEffect']}",
+                "-vf", f"drawtext=text='{media['Text']}':fontsize={media['FontSize']}:fontcolor={translate_color(media['FontColor'])}:x={media['Position']['x']}:y={media['Position']['y']}",
                 "-ss", str(media["StartTime"]),
                 "-t", str(media["Duration"])
             ])
@@ -462,7 +524,10 @@ def generate_clip(clip):
             logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
     # Add output filename
     command.extend([
-        '-c:v', 'libx264',
+        "-vf", f"scale={clip['Position']['width']}:{clip['Position']['height']},rotate={clip['Position']['rotation']}",
+        "-af", f"volume={clip.get('Volume', 100)}",
+ 
+        '-c:v', 'h264',
         '-c:a', 'aac',
         clip['ClipFileName']
     ])
@@ -477,75 +542,41 @@ def generate_srt(clips, filename):
     with open(filename, 'w') as f:
         count = 1
         for clip in clips:
-            start_time = clip['StartTime']
-            end_time = int(start_time) + int(clip['Duration'])
+            start_time = format_time(clip['StartTime'])
+            end_time = format_time(float(clip['StartTime']) + float(clip['Duration']))
             subtitle = clip['Script']
-
-            f.write(str(count) + '\n')
-            f.write(str(start_time) + ' --> ' + str(end_time) + '\n')
-            f.write(subtitle + '\n')
-            f.write('\n')
-
-            count += 1
+            if len(subtitle)>0:
+                f.write(str(count) + '\n')
+                f.write(str(start_time) + ' --> ' + str(end_time) + '\n')
+                f.write(subtitle + '\n')
+                count += 1
         f.close()
 
 def join_clips(clips, background_audio_file, sub_file, output_file):
     command = ['ffmpeg']
-    inputs = []
-
-    # Add input command for subtitle
-    if sub_file:
-        inputs.append(f'-subtitles {sub_file}')
-
-    # Add input command for background audio
+    for clip in clips:
+        command.extend(['-i', clip['ClipFileName']])
     if background_audio_file:
-        inputs.append(f'-i {background_audio_file}')
+        command.extend(['-i', background_audio_file])
+    if sub_file:
+        command.extend(['-i', sub_file])
 
-    # Add input commands for each clip
-    for i, clip in enumerate(clips):
-        inputs.append(f'-i {clip["ClipFileName"]}')
+    filter_graph = ''
+    input_index = 0
+    for i in range(len(clips)):
+        filter_graph += '[{0}:v][{0}:a]'.format(i)
+        input_index += 1
+    filter_graph += 'concat=n={0}:v=1:a=1[outv][outa]'.format(len(clips))
 
-        # Add transition command between clips if not the last clip
-        if i < len(clips) - 1:
-            transition_type = clip['TransitionType']
-            transition_time = clip['TransitionTime']
+    command.extend(['-filter_complex', filter_graph])
+    command.extend(['-map', '[outv]'])
+    command.extend(['-map', '[outa]'])
+    command.extend(['-c:v', 'copy'])
+    command.extend(['-c:a', 'aac'])
+    command.append(output_file)
 
-            # Add transition filter command
-            command.extend([
-                '-filter_complex',
-                f'[{i}:v]trim=0:{clip["Duration"]} [v{i}]; '
-                f'[{i+1}:v]trim=0:{transition_time},setpts=PTS-STARTPTS+{clip["Duration"]}/TB,'
-                f'format=yuva420p,fade=t=out:st=0:d={transition_time}:alpha=1 [v{i+1}]; '
-                f'[v{i}][v{i+1}]overlay=eof_action=pass:repeatlast=1[v]'
-            ])
-
-            # Add audio transition command
-            command.extend([
-                '-af',
-                f'atrim=0:{clip["Duration"]}, asetpts=PTS-STARTPTS, afade=t=out:st=0:d={transition_time},'
-                f'atrim=0:{transition_time}, asetpts=PTS-STARTPTS+{clip["Duration"]}/TB [a{i+1}]'
-            ])
-        else:
-            # Add audio command for the last clip without transition
-            command.extend([
-                '-map', f'{i+1}:a',
-                '-c:a', 'copy'
-            ])
-
-    # Concatenate video and audio streams
-    command.extend([
-        '-map', '0:a',
-        '-map', '[v]',
-        '-map', '[a1]',
-        '-c:v', 'libx264',
-        '-c:a', 'aac',
-        output_file
-    ])
-
-    # Join input commands and return the final command
-    command.extend(inputs)
-
-    return execute_command(command)
+    # Execute the command and capture the output
+    execute_command(command)
 
 def main():
     parser=OptionParser(usage="usage: %prog [options] xmlVideoScript.xml")
