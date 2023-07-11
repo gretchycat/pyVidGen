@@ -16,7 +16,7 @@ pixabay_API_KEY = "38036450-c3aaf7be223f4d01b66e68cae"
 def setup_logging(log_file):
     # Create a formatter with color
     stderr_formatter = colorlog.ColoredFormatter(
-        '%(log_color)s%(levelname)s:%(message)s',
+        '%(log_color)s%(levelname)s:%(reset)s%(message)s',
         log_colors={
             'DEBUG': 'bold_blue',
             'INFO': 'bold_green',
@@ -36,7 +36,7 @@ def setup_logging(log_file):
 
     # Create a stream handler for stderr
     stderr_handler = logging.StreamHandler()
-    stderr_handler.setLevel(logging.INFO)
+    stderr_handler.setLevel(logging.DEBUG)
     stderr_handler.setFormatter(stderr_formatter)
 
     # Configure the root logger with the handlers
@@ -64,16 +64,24 @@ def execute_command(command):
     Executes a command in the system and logs the command line and output.
     """
     try:
+        output=""
+        sepw=60
+        logging.info('-'*sepw)
         logging.info(f"Executing command: {' '.join(command)}")
-        result = subprocess.run(command, shell=False, capture_output=True, text=True)
-        if result.returncode==0:
-            logging.info(f"Command stdout: {result.stdout.strip()}")
-            logging.info(f"Command stderr: {result.stderr.strip()}")
-        else:
-            logging.error(f"Command stdout: {result.stdout.strip()}")
-            logging.error(f"Command stderr: {result.stderr.strip()}")
+        logging.info('-'*sepw)
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+        for line in process.stdout:
+            logging.debug(line.rstrip('\n'))
+            output+=line
+        process.wait()
+        process.output=output
+        if(process.returncode>0):
+            logging.error(f"Error executing command.") 
+        logging.debug('-'*sepw)
+        return process
     except Exception as e:
         logging.error(f"Error executing command: {e}")
+        logging.error('-'*sepw)
 
 def search_images(search_query, num_images, output_directory):
     search_images_pexels(search_query, num_images, output_directory)
@@ -304,7 +312,6 @@ def parse_video_script(filename):
     if global_defaults is not None:
         for child in global_defaults:
             global_defaults_dict[child.tag] = child.text
-    
     # Retrieve all clips in the script
     all_clips = root.findall(".//Clip")
     for clip_element in all_clips:
@@ -339,7 +346,7 @@ def parse_video_script(filename):
 
         clip_dict["Media"] = media_list
         clips.append(clip_dict)
-    return clips
+    return clips, global_defaults_dict
 
 def fix_durations(clips):
     totalDuration=0
@@ -420,6 +427,43 @@ def adjust_volume(input_file, output_file, volume_level):
     command = f"ffmpeg -i {input_file} -af 'volume={volume_level}' -y {output_file}"
     execute_command(command)
 
+def add_missing_streams(input_file):
+    temp_output_file = 'temp_output.mp4'
+    
+    # Run FFprobe to get the stream information
+    ffprobe_cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-print_format', 'json', input_file]
+    result = execute_command(ffprobe_cmd)
+    ffprobe_output=result.output
+    # Parse the FFprobe output
+    ffprobe_data = json.loads(ffprobe_output)
+    streams = ffprobe_data['streams']
+
+    # Check if audio and video streams exist
+    audio_stream_exists = any(stream['codec_type'] == 'audio' for stream in streams)
+    video_stream_exists = any(stream['codec_type'] == 'video' for stream in streams)
+
+    # Prepare FFmpeg command with conditional options
+    ffmpeg_cmd = ['ffmpeg', '-i', input_file]
+    acodec='copy'
+    vcodec='copy'
+    if not audio_stream_exists:
+        logging.info(f'Adding a blank audio stream to {input_file}.')
+        acodec='aac'
+        ffmpeg_cmd.extend(['-f', 'lavfi', '-i', 'anullsrc'])
+    if not video_stream_exists:
+        logging.info(f'Adding a blank video stream to {input_file}.')
+        vcodec='h264'
+        ffmpeg_cmd.extend(['-f', 'lavfi', '-i', 'color=c=black:s=1920x1080'])
+
+    ffmpeg_cmd.extend(['-c:v', f'{vcodec}', '-c:a', f'{acodec}', '-map', '0', '-map', '1', '-shortest', temp_output_file])
+    if acodec!='copy' or vcodec!='copy':
+        # Run FFmpeg to add missing streams
+        execute_command(ffmpeg_cmd)
+
+        # Rename the temporary output file to the original file name
+        os.remove(input_file)
+        shutil.move(temp_output_file, input_file)
+
 def generate_clip_lib(clip):
     # Create a list to store the input sources
     inputs = []
@@ -460,6 +504,7 @@ def generate_clip_lib(clip):
             'af': 'apad=pad_len=2*duration'})
     # Run the FFmpeg command
     ffmpeg.run(output, overwrite_output=True)
+    add_missing_streams(file_path)
 
 def generate_clip(clip):
     """
@@ -531,8 +576,8 @@ def generate_clip(clip):
         '-c:a', 'aac',
         clip['ClipFileName']
     ])
-
-    return execute_command(command)
+    execute_command(command)
+    add_missing_streams(clip['ClipFileName'])
 
 def generate_srt(clips, filename):
     """
@@ -553,26 +598,46 @@ def generate_srt(clips, filename):
         f.close()
 
 def join_clips(clips, background_audio_file, sub_file, output_file):
+    """
+    ffmpeg -f concat -i file.txt -c:v libx264  -pix_fmt yuv420p  -c:a aac output.mp4
+    """
+    with open('temp_inputs.txt', 'w') as file:
+        for clip in clips:
+            file.write(f'file {clip["ClipFileName"]}\n')
+        file.close()
+
     command = ['ffmpeg']
     for clip in clips:
-        command.extend(['-i', clip['ClipFileName']])
+        command.extend(['-f', 'concat','-i', 'temp_inputs.txt'])
+
     if background_audio_file:
         command.extend(['-i', background_audio_file])
     if sub_file:
         command.extend(['-i', sub_file])
-
+    """
     filter_graph = ''
     input_index = 0
     for i in range(len(clips)):
-        filter_graph += '[{0}:v][{0}:a]'.format(i)
+        filter_graph += '[{0}:v]setsar=1[v{0}];'.format(i)
         input_index += 1
-    filter_graph += 'concat=n={0}:v=1:a=1[outv][outa]'.format(len(clips))
+    input_index = 0
+    for i in range(len(clips)):
+        filter_graph += '[v{0}]'.format(i)
+        input_index += 1
+    filter_graph += 'hstack=inputs={0}[v];'.format(len(clips))
+    input_index = 0
+    for i in range(len(clips)):
+        filter_graph += '[{0}:a]'.format(i)
+        input_index += 1
+    filter_graph += 'amerge=inputs={0}[a]'.format(len(clips))
 
     command.extend(['-filter_complex', filter_graph])
-    command.extend(['-map', '[outv]'])
-    command.extend(['-map', '[outa]'])
-    command.extend(['-c:v', 'copy'])
+    command.extend(['-map', '[v]'])
+    command.extend(['-map', '[a]'])
+    """
+    command.extend(['-c:v', 'h264'])
     command.extend(['-c:a', 'aac'])
+    command.extend(['-pix_fmt', 'yuv420p'])
     command.append(output_file)
 
     # Execute the command and capture the output
@@ -582,6 +647,8 @@ def main():
     parser=OptionParser(usage="usage: %prog [options] xmlVideoScript.xml")
     parser.add_option("-c", "--check", dest="check", default=False,
             help="Don't render, only check the XML and find missing media.")
+    parser.add_option("-d", "--debug", dest="debug", default=False,
+            help="Show debug messages.")
     (options, args)=parser.parse_args()
     if len(args)==0:
         parser.print_help()
@@ -598,18 +665,15 @@ def main():
     setup_logging(log_file)
     #try:
     if True:
-        clips = parse_video_script(xml_file)
+        clips, defaults = parse_video_script(xml_file)
         missing=check_missing_media(clips)
-        print('\x1b[1m',end='')
-        pprint.pprint(clips)
-        print('\x1b[0m',end='')
         if(missing):
             logging.error(f'There are {missing} missing media files.')
         else:
             for clip in clips: 
                 generate_clip(clip)
             generate_srt(clips, sub_file)
-            join_clips(clips, None, sub_file, output_file)
+            join_clips(clips, defaults.get("BackgroundMusic"), sub_file, output_file)
 
 if __name__ == "__main__":
     main()
