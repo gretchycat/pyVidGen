@@ -428,41 +428,41 @@ def adjust_volume(input_file, output_file, volume_level):
     execute_command(command)
 
 def add_missing_streams(input_file):
-    temp_output_file = 'temp_output.mp4'
-    
-    # Run FFprobe to get the stream information
-    ffprobe_cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-print_format', 'json', input_file]
-    result = execute_command(ffprobe_cmd)
-    ffprobe_output=result.output
-    # Parse the FFprobe output
-    ffprobe_data = json.loads(ffprobe_output)
-    streams = ffprobe_data['streams']
+    if file_exists(input_file):
+        temp_output_file = 'temp_output.mp4'    
+        # Run FFprobe to get the stream information
+        ffprobe_cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-print_format', 'json', input_file]
+        result = execute_command(ffprobe_cmd)
+        ffprobe_output=result.output
+        # Parse the FFprobe output
+        ffprobe_data = json.loads(ffprobe_output)
+        streams = ffprobe_data['streams']
 
-    # Check if audio and video streams exist
-    audio_stream_exists = any(stream['codec_type'] == 'audio' for stream in streams)
-    video_stream_exists = any(stream['codec_type'] == 'video' for stream in streams)
+        # Check if audio and video streams exist
+        audio_stream_exists = any(stream['codec_type'] == 'audio' for stream in streams)
+        video_stream_exists = any(stream['codec_type'] == 'video' for stream in streams)
 
-    # Prepare FFmpeg command with conditional options
-    ffmpeg_cmd = ['ffmpeg', '-i', input_file]
-    acodec='copy'
-    vcodec='copy'
-    if not audio_stream_exists:
-        logging.info(f'Adding a blank audio stream to {input_file}.')
-        acodec='aac'
-        ffmpeg_cmd.extend(['-f', 'lavfi', '-i', 'anullsrc'])
-    if not video_stream_exists:
-        logging.info(f'Adding a blank video stream to {input_file}.')
-        vcodec='h264'
-        ffmpeg_cmd.extend(['-f', 'lavfi', '-i', 'color=c=black:s=1920x1080'])
+        # Prepare FFmpeg command with conditional options
+        ffmpeg_cmd = ['ffmpeg', '-i', input_file]
+        acodec='copy'
+        vcodec='copy'
+        if not audio_stream_exists:
+            logging.info(f'Adding a blank audio stream to {input_file}.')
+            acodec='aac'
+            ffmpeg_cmd.extend(['-f', 'lavfi', '-i', 'anullsrc'])
+        if not video_stream_exists:
+            logging.info(f'Adding a blank video stream to {input_file}.')
+            vcodec='h264'
+            ffmpeg_cmd.extend(['-f', 'lavfi', '-i', 'color=c=black:s=1920x1080'])
 
-    ffmpeg_cmd.extend(['-c:v', f'{vcodec}', '-c:a', f'{acodec}', '-map', '0', '-map', '1', '-shortest', temp_output_file])
-    if acodec!='copy' or vcodec!='copy':
-        # Run FFmpeg to add missing streams
-        execute_command(ffmpeg_cmd)
+        ffmpeg_cmd.extend(['-c:v', f'{vcodec}', '-c:a', f'{acodec}', '-map', '0', '-map', '1', '-shortest', temp_output_file])
+        if acodec!='copy' or vcodec!='copy':
+            # Run FFmpeg to add missing streams
+            execute_command(ffmpeg_cmd)
 
-        # Rename the temporary output file to the original file name
-        os.remove(input_file)
-        shutil.move(temp_output_file, input_file)
+            # Rename the temporary output file to the original file name
+            os.remove(input_file)
+            shutil.move(temp_output_file, input_file)
 
 def generate_clip_lib(clip):
     # Create a list to store the input sources
@@ -510,57 +510,71 @@ def generate_clip(clip):
     """
     Generates a video clip based on the provided XML clip data,
     handling the positioning and timing of media elements within the clip.
-    """
-    command = ['ffmpeg']
 
+    ffmpeg 
+        -f lavfi -i color=#000000:size=1920x1080:duration=23.0 
+        -i video.mp4 
+        -loop 1 -i image.jpg 
+        -i audio.mp3 
+        -i tts_audio1.wav 
+        -filter_complex [0:v][1:v]overlay=x=0:y=0:enable='between(t,0,9.0)'[v0];
+                        [v0][2:v]overlay=x=0:y=0:enable='between(t,2,6)';
+                        [3:a][4:a]amix 
+        -c:v h264 
+        -c:a aac 
+        -y 
+        temp_20230716013512387103.mp4 
+    """
+    filter_graph=""
+    command = ['ffmpeg']
+    stream_num=0
     # Add background color input
-    command.extend([
-        '-v', 'info', '-f', 'lavfi',
-        '-i', f'color={translate_color(clip["BackgroundColor"])}:size=1920x1080:duration={clip["Duration"]}'
-    ])
+    command.extend(['-f', 'lavfi', '-i', f'color={translate_color(clip["BackgroundColor"])}:size=1920x1080:duration={clip["Duration"]}'])
+    filter_graph+=f"[{stream_num}:v]"
 
     # Add media inputs
     for media in clip['Media']:
         media_type = media['MediaType']
-
+        def vid_graph(stream_num, media): 
+            return f"[{str(stream_num)}:v]overlay="\
+                    "x="+str(media['Position']['x'])+":"\
+                    "y="+str(media['Position']['y'])+":"\
+                    "enable='between(t,"+str(media['StartTime'])+","+str(media['Duration'])+")';"
+        def aud_graph(stream_num, media):
+            return f"[{str(stream_num)}:a]amix;"
         if media_type == 'Video':
             command.extend([
-                #"-vf", f"scale={media['Position']['width']}:{media['Position']['height']},rotate={media['Position']['rotation']}",
-                #"-af", f"volume={media.get('Volume', 100)}",
                 "-i", media["FilePath"],
-                "-ss", str(media["StartTime"]),
-                "-t", str(media["Duration"]),
             ])
+            stream_num+=1
+            filter_graph+=vid_graph(stream_num, media)
         elif media_type == 'Image':
             command.extend([
-                #"-vf", f"scale={media['Position']['width']}:{media['Position']['height']},rotate={media['Position']['rotation']}",
                 "-loop", "1",
                 "-i", media["FilePath"],
-                "-ss", str(media["StartTime"]),
-                "-t", str(media["Duration"]),
             ])
+            stream_num+=1
+            filter_graph+=vid_graph(stream_num, media)
         elif media_type == 'Audio':
             command.extend([
-                #"-af", f"volume={media.get('Volume', 100)}",
                 "-i", media["FilePath"],
-                "-ss", str(media["StartTime"]),
-                "-t", str(media["Duration"]),
             ])
+            stream_num+=1
+            filter_graph+=aud_graph(stream_num, media)
         elif media_type == 'TTS':
             command.extend([
-                #"-af", f"volume={media.get('Volume', 100)}",
                 "-i", f"{media['FilePath']}",
-                "-ss", str(media["StartTime"]),
-                "-t", str(media["Duration"]),
             ])
-        elif media_type == 'TextOverlay':
+            stream_num+=1
+            filter_graph+=aud_graph(stream_num, media)
+        elif media_type == 'TextOverlayX':
             command.extend([
                 "-f", "lavfi",
                 "-i", f"color=c=black:s={media['Position']['width']}x{media['Position']['height']}:r=25:d={media['Duration']}",
                 "-vf", f"drawtext=text='{media['Text']}':fontsize={media['FontSize']}:fontcolor={translate_color(media['FontColor'])}:x={media['Position']['x']}:y={media['Position']['y']}",
-                "-ss", str(media["StartTime"]),
-                "-t", str(media["Duration"])
             ])
+            stream_num+=1
+            filter_graph+=vid_graph(stream_num, media)
         elif media_type == 'Clips':
             # Ignore Clips media type for now (implementation details depend on handling nested clips)
             continue
@@ -569,9 +583,7 @@ def generate_clip(clip):
             logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
     # Add output filename
     command.extend([
-        "-vf", f"scale={clip['Position']['width']}:{clip['Position']['height']},rotate={clip['Position']['rotation']}",
-        "-af", f"volume={clip.get('Volume', 100)}",
- 
+        '-filter_complex', filter_graph,
         '-c:v', 'h264',
         '-c:a', 'aac',
         clip['ClipFileName']
@@ -597,7 +609,7 @@ def generate_srt(clips, filename):
                 count += 1
         f.close()
 
-def join_clips(clips, background_audio_file, sub_file, output_file):
+def join_clips_basic(clips, background_audio_file, sub_file, output_file):
     """
     ffmpeg -f concat -i file.txt -c:v libx264  -pix_fmt yuv420p  -c:a aac output.mp4
     """
@@ -607,9 +619,25 @@ def join_clips(clips, background_audio_file, sub_file, output_file):
         file.close()
 
     command = ['ffmpeg']
-    for clip in clips:
-        command.extend(['-f', 'concat','-i', 'temp_inputs.txt'])
+    command.extend(['-f', 'concat','-i', 'temp_inputs.txt'])
 
+    if background_audio_file:
+        command.extend(['-i', background_audio_file])
+    if sub_file:
+        command.extend(['-i', sub_file])
+    command.extend(['-y'])
+    command.extend(['-c:v', 'h264'])
+    command.extend(['-c:a', 'aac'])
+    command.extend(['-pix_fmt', 'yuv420p'])
+    command.append(output_file)
+
+    # Execute the command and capture the output
+    execute_command(command)
+
+def join_clips(clips, background_audio_file, sub_file, output_file):
+    command = ['ffmpeg']
+    for clip in clips:
+        command.extend(['-i', clip['ClipFileName']])
     if background_audio_file:
         command.extend(['-i', background_audio_file])
     if sub_file:
@@ -635,6 +663,9 @@ def join_clips(clips, background_audio_file, sub_file, output_file):
     command.extend(['-map', '[v]'])
     command.extend(['-map', '[a]'])
     """
+    command.extend(['-filter_complex', 'xfade=transition=fade:offset=0:duration=2,format=yuv420p'])
+    command.extend(['-movflags', '+faststart'])
+    command.extend(['-y'])
     command.extend(['-c:v', 'h264'])
     command.extend(['-c:a', 'aac'])
     command.extend(['-pix_fmt', 'yuv420p'])
