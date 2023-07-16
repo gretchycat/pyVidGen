@@ -525,65 +525,82 @@ def generate_clip(clip):
         -y 
         temp_20230716013512387103.mp4 
     """
-    filter_graph=""
     command = ['ffmpeg']
-    stream_num=0
-    # Add background color input
-    command.extend(['-f', 'lavfi', '-i', f'color={translate_color(clip["BackgroundColor"])}:size=1920x1080:duration={clip["Duration"]}'])
-    filter_graph+=f"[{stream_num}:v]"
+    filter_graph={"v":[], "a":[]}
 
-    # Add media inputs
+    # Add background color input
+    stream_num=0
+    command.extend(['-f', 'lavfi', '-i', f'color={translate_color(clip["BackgroundColor"])}:size=1920x1080:duration={clip["Duration"]}'])
+    filter_graph.v.extend(f"[{stream_num}:v]")
+
+    #Add blank Audio (set the format)
+    stream_num+=1
+    command.extend(['-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate=44100:duration={clip["Duration"]}'])
+    filter_graph.a.extend(f"[{stream_num}:a]")
+
+    def vid_graph(stream_num, media):
+        return f"[{str(stream_num)}:v]overlay="\
+                "x="+str(media['Position']['x'])+":"\
+                "y="+str(media['Position']['y'])+":"\
+                "enable='between(t,"+str(media['StartTime'])+","+str(media['Duration'])+")';"
+
+    def aud_graph(stream_num, media):
+        return f"[{str(stream_num)}:a]amix;"
+
+    # Add media inputs and generate filter_graph data
     for media in clip['Media']:
         media_type = media['MediaType']
-        def vid_graph(stream_num, media): 
-            return f"[{str(stream_num)}:v]overlay="\
-                    "x="+str(media['Position']['x'])+":"\
-                    "y="+str(media['Position']['y'])+":"\
-                    "enable='between(t,"+str(media['StartTime'])+","+str(media['Duration'])+")';"
-        def aud_graph(stream_num, media):
-            return f"[{str(stream_num)}:a]amix;"
         if media_type == 'Video':
             command.extend([
                 "-i", media["FilePath"],
             ])
             stream_num+=1
-            filter_graph+=vid_graph(stream_num, media)
+            filter_graph.v.append(vid_graph(stream_num, media))
+
         elif media_type == 'Image':
             command.extend([
                 "-loop", "1",
                 "-i", media["FilePath"],
             ])
             stream_num+=1
-            filter_graph+=vid_graph(stream_num, media)
+            filter_graph.v.append(vid_graph(stream_num, media))
         elif media_type == 'Audio':
             command.extend([
                 "-i", media["FilePath"],
             ])
             stream_num+=1
-            filter_graph+=aud_graph(stream_num, media)
+            filter_graph.a.append(aud_graph(stream_num, media))
         elif media_type == 'TTS':
             command.extend([
                 "-i", f"{media['FilePath']}",
             ])
             stream_num+=1
-            filter_graph+=aud_graph(stream_num, media)
-        elif media_type == 'TextOverlayX':
+            filter_graph.a.append(aud_graph(stream_num, media))
+        elif media_type == 'TextOverlayDISABLED':
             command.extend([
                 "-f", "lavfi",
                 "-i", f"color=c=black:s={media['Position']['width']}x{media['Position']['height']}:r=25:d={media['Duration']}",
                 "-vf", f"drawtext=text='{media['Text']}':fontsize={media['FontSize']}:fontcolor={translate_color(media['FontColor'])}:x={media['Position']['x']}:y={media['Position']['y']}",
             ])
             stream_num+=1
-            filter_graph+=vid_graph(stream_num, media)
+            filter_graph.v.append(vid_graph(stream_num, media))
         elif media_type == 'Clips':
-            # Ignore Clips media type for now (implementation details depend on handling nested clips)
+            # Ignore Clips media type for now (implementation depends on how we handle nested clips)
             continue
         else:
             # Log a warning for unknown media type
             logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
-    # Add output filename
+    #generate the full filter graph
+    filter_graph_str=""
+    if len(filter_graph.v)>2:
+        #create new stream names, insert after every filter_graph.v after 0 and 1
+        #do not end as a filter target.
+        pass
+    #copy vídeo filter graph processimg for audio
+    #be sure to prepend audio bit with ;
+    #no trailing ;
     command.extend([
-        '-filter_complex', filter_graph,
+        '-filter_complex', filter_graph_str,
         '-c:v', 'h264',
         '-c:a', 'aac',
         clip['ClipFileName']
