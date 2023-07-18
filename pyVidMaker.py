@@ -531,21 +531,21 @@ def generate_clip(clip):
     # Add background color input
     stream_num=0
     command.extend(['-f', 'lavfi', '-i', f'color={translate_color(clip["BackgroundColor"])}:size=1920x1080:duration={clip["Duration"]}'])
-    filter_graph.v.extend(f"[{stream_num}:v]")
+    filter_graph['v'].extend([f"[{stream_num}:v]"])
 
     #Add blank Audio (set the format)
     stream_num+=1
     command.extend(['-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate=44100:duration={clip["Duration"]}'])
-    filter_graph.a.extend(f"[{stream_num}:a]")
+    filter_graph['a'].extend([f"[{stream_num}:a]"])
 
     def vid_graph(stream_num, media):
         return f"[{str(stream_num)}:v]overlay="\
                 "x="+str(media['Position']['x'])+":"\
                 "y="+str(media['Position']['y'])+":"\
-                "enable='between(t,"+str(media['StartTime'])+","+str(media['Duration'])+")';"
+                "enable='between(t,"+str(media['StartTime'])+","+str(media['Duration'])+")'"
 
     def aud_graph(stream_num, media):
-        return f"[{str(stream_num)}:a]amix;"
+        return f"[{str(stream_num)}:a]amix"
 
     # Add media inputs and generate filter_graph data
     for media in clip['Media']:
@@ -555,7 +555,7 @@ def generate_clip(clip):
                 "-i", media["FilePath"],
             ])
             stream_num+=1
-            filter_graph.v.append(vid_graph(stream_num, media))
+            filter_graph['v'].extend([vid_graph(stream_num, media)])
 
         elif media_type == 'Image':
             command.extend([
@@ -563,19 +563,19 @@ def generate_clip(clip):
                 "-i", media["FilePath"],
             ])
             stream_num+=1
-            filter_graph.v.append(vid_graph(stream_num, media))
+            filter_graph['v'].extend([vid_graph(stream_num, media)])
         elif media_type == 'Audio':
             command.extend([
                 "-i", media["FilePath"],
             ])
             stream_num+=1
-            filter_graph.a.append(aud_graph(stream_num, media))
+            filter_graph['a'].extend([aud_graph(stream_num, media)])
         elif media_type == 'TTS':
             command.extend([
                 "-i", f"{media['FilePath']}",
             ])
             stream_num+=1
-            filter_graph.a.append(aud_graph(stream_num, media))
+            filter_graph['a'].extend([aud_graph(stream_num, media)])
         elif media_type == 'TextOverlayDISABLED':
             command.extend([
                 "-f", "lavfi",
@@ -583,22 +583,33 @@ def generate_clip(clip):
                 "-vf", f"drawtext=text='{media['Text']}':fontsize={media['FontSize']}:fontcolor={translate_color(media['FontColor'])}:x={media['Position']['x']}:y={media['Position']['y']}",
             ])
             stream_num+=1
-            filter_graph.v.append(vid_graph(stream_num, media))
+            filter_graph['v'].extend([vid_graph(stream_num, media)])
         elif media_type == 'Clips':
             # Ignore Clips media type for now (implementation depends on how we handle nested clips)
             continue
         else:
             # Log a warning for unknown media type
             logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
+    pprint.pprint(filter_graph)
     #generate the full filter graph
     filter_graph_str=""
-    if len(filter_graph.v)>2:
-        #create new stream names, insert after every filter_graph.v after 0 and 1
-        #do not end as a filter target.
-        pass
-    #copy vídeo filter graph processimg for audio
-    #be sure to prepend audio bit with ;
-    #no trailing ;
+    if len(filter_graph['v'])==1:
+        filter_graph_str+=filter_graph['v'][0]
+    else:
+        filter_graph_str+=filter_graph['v'][0]+filter_graph['v'][1]
+        i=0
+        while (i+2)<len(filter_graph['v']):
+            filter_graph_str+=f'[v{i}];[v{i}]'+filter_graph['v'][i+2]
+            i+=1;
+    filter_graph_str+=';'
+    if len(filter_graph['a'])==1:
+        filter_graph_str+=filter_graph['a'][0]
+    else:
+        filter_graph_str+=filter_graph['a'][0]+filter_graph['a'][1]
+        i=0
+        while (i+2)<len(filter_graph['a']):
+            filter_graph_str+=f'[a{i}];[a{i}]'+filter_graph['a'][i+2]
+            i+=1;
     command.extend([
         '-filter_complex', filter_graph_str,
         '-c:v', 'h264',
