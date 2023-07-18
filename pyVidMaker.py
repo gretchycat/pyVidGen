@@ -579,8 +579,8 @@ def generate_clip(clip):
         elif media_type == 'TextOverlayDISABLED':
             command.extend([
                 "-f", "lavfi",
-                "-i", f"color=c=black:s={media['Position']['width']}x{media['Position']['height']}:r=25:d={media['Duration']}",
                 "-vf", f"drawtext=text='{media['Text']}':fontsize={media['FontSize']}:fontcolor={translate_color(media['FontColor'])}:x={media['Position']['x']}:y={media['Position']['y']}",
+                "-i", f"color=c=black:s={media['Position']['width']}x{media['Position']['height']}:r=25:d={media['Duration']}",
             ])
             stream_num+=1
             filter_graph['v'].extend([vid_graph(stream_num, media)])
@@ -594,7 +594,7 @@ def generate_clip(clip):
     #generate the full filter graph
     filter_graph_str=""
     if len(filter_graph['v'])==1:
-        filter_graph_str+=filter_graph['v'][0]
+        filter_graph_str+=filter_graph['v'][0]+'overlay'
     else:
         filter_graph_str+=filter_graph['v'][0]+filter_graph['v'][1]
         i=0
@@ -603,7 +603,7 @@ def generate_clip(clip):
             i+=1;
     filter_graph_str+=';'
     if len(filter_graph['a'])==1:
-        filter_graph_str+=filter_graph['a'][0]
+        filter_graph_str+=filter_graph['a'][0]+'amix'
     else:
         filter_graph_str+=filter_graph['a'][0]+filter_graph['a'][1]
         i=0
@@ -614,6 +614,7 @@ def generate_clip(clip):
         '-filter_complex', filter_graph_str,
         '-c:v', 'h264',
         '-c:a', 'aac',
+        '-t', str(clip['Duration']),
         clip['ClipFileName']
     ])
     execute_command(command)
