@@ -577,6 +577,9 @@ def generate_clip(clip):
             stream_num+=1
             filter_graph['a'].extend([aud_graph(stream_num, media)])
         elif media_type == 'TextOverlayDISABLED':
+            """
+            ffmpeg -i video.mp4 -filter_complex "[0:v]drawtext=text=My text here:fontsize=30:fontcolor=white:x=10:y=10:bordercolor=black:borderw=5:box=1:boxcolor=red:fontfile=/data/data/com.termux/files/home/homedir/.fonts/ttf-arkpandora-2.04/AerialBd.ttf" -y output.mp4
+            """
             command.extend([
                 "-f", "lavfi",
                 "-vf", f"drawtext=text='{media['Text']}':fontsize={media['FontSize']}:fontcolor={translate_color(media['FontColor'])}:x={media['Position']['x']}:y={media['Position']['y']}",
