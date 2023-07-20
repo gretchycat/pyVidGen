@@ -110,6 +110,7 @@
             <Media type="Audio">
                 <FilePath>audio.mp3</FilePath> <!-- Mandatory -->
                 <Script>SCRIPT TEXT HERE</Script><!-- Optional - for CC or subtitles -->
+                <Voice></Voice> <!-- Which voice to use. -->
                 <StartTime>0</StartTime> <!-- Optional -->
                 <Duration>-1</Duration>
                 <Volume>100</Volume> <!-- Optional, default is 100 -->

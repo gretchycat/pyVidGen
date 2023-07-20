@@ -538,13 +538,18 @@ def generate_clip(clip):
     command.extend(['-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate=44100:duration={clip["Duration"]}'])
     filter_graph['a'].extend([f"[{stream_num}:a]"])
 
-    def vid_graph(stream_num, media):
+
+            """'
+            ffmpeg -i video.mp4 -filter_complex "[0:v]drawtext=text=My text here:fontsize=30:fontcolor=white:x=10:y=10:bordercolor=black:borderw=5:box=1:boxcolor=red:fontfile=/data/data/com.termux/files/home/homedir/.fonts/ttf-arkpandora-2.04/AerialBd.ttf" -y output.mp4
+            """
+ 
+    def vid_graph(stream_num, media): #FIXME make sure to add filter processing
         return f"[{str(stream_num)}:v]overlay="\
                 "x="+str(media['Position']['x'])+":"\
                 "y="+str(media['Position']['y'])+":"\
                 "enable='between(t,"+str(media['StartTime'])+","+str(media['Duration'])+")'"
 
-    def aud_graph(stream_num, media):
+    def aud_graph(stream_num, media): #FIXME make sure to add filter processing
         return f"[{str(stream_num)}:a]amix"
 
     # Add media inputs and generate filter_graph data
@@ -576,25 +581,12 @@ def generate_clip(clip):
             ])
             stream_num+=1
             filter_graph['a'].extend([aud_graph(stream_num, media)])
-        elif media_type == 'TextOverlayDISABLED':
-            """
-            ffmpeg -i video.mp4 -filter_complex "[0:v]drawtext=text=My text here:fontsize=30:fontcolor=white:x=10:y=10:bordercolor=black:borderw=5:box=1:boxcolor=red:fontfile=/data/data/com.termux/files/home/homedir/.fonts/ttf-arkpandora-2.04/AerialBd.ttf" -y output.mp4
-            """
-            command.extend([
-                "-f", "lavfi",
-                "-vf", f"drawtext=text='{media['Text']}':fontsize={media['FontSize']}:fontcolor={translate_color(media['FontColor'])}:x={media['Position']['x']}:y={media['Position']['y']}",
-                "-i", f"color=c=black:s={media['Position']['width']}x{media['Position']['height']}:r=25:d={media['Duration']}",
-            ])
-            stream_num+=1
-            filter_graph['v'].extend([vid_graph(stream_num, media)])
-        elif media_type == 'Clips':
-            # Ignore Clips media type for now (implementation depends on how we handle nested clips)
-            continue
         else:
             # Log a warning for unknown media type
             logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
     pprint.pprint(filter_graph)
-    #generate the full filter graph
+
+    #generate the full filter graph FIXME this will be wrong when filters are added
     filter_graph_str=""
     if len(filter_graph['v'])==1:
         filter_graph_str+=filter_graph['v'][0]+'overlay'
@@ -613,6 +605,7 @@ def generate_clip(clip):
         while (i+2)<len(filter_graph['a']):
             filter_graph_str+=f'[a{i}];[a{i}]'+filter_graph['a'][i+2]
             i+=1;
+
     command.extend([
         '-filter_complex', filter_graph_str,
         '-c:v', 'h264',
