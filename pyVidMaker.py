@@ -1,8 +1,9 @@
-import os, hashlib, subprocess, logging, colorlog, pprint, datetime, glob
+import os, hashlib, subprocess, logging, colorlog, datetime, glob
 import shutil, requests, json
-from bs4 import BeautifulSoup
 import urllib.parse
 import xml.etree.ElementTree as ET
+from bs4 import BeautifulSoup
+from pprint import pprint
 from optparse import OptionParser
 from gtts import gTTS
 from imageSelect import imageSelect
@@ -288,13 +289,13 @@ def get_file_duration(file_path):
     ]
     
     #print('\x1b[1;32m',end='')
-    #pprint.pprint(command)
+    #pprint(command)
     output = subprocess.check_output(command).decode('utf-8')
 
     duration_data = json.loads(output)
 
     #print('\x1b[1;33m',end='')
-    #pprint.pprint(output)
+    #pprint(output)
     #print('\x1b[0m',end='')
     duration = float(duration_data['format']['duration'])
     return duration
@@ -356,7 +357,7 @@ def fix_durations(clips):
         while passes<2:
             for media in clip['Media']:
                 #print('\x1b[1;31m',end='')
-                #pprint.pprint(media)
+                #pprint(media)
                 #print('\x1b[0m',end='')
                 if not media.get('Duration'):
                     media['Duration']=-1
@@ -531,17 +532,19 @@ def generate_clip(clip):
     # Add background color input
     stream_num=0
     command.extend(['-f', 'lavfi', '-i', f'color={translate_color(clip["BackgroundColor"])}:size=1920x1080:duration={clip["Duration"]}'])
-    filter_graph['v'].extend([f"[{stream_num}:v]"])
+    filter_graph['v'].insert(0, f"[{stream_num}:v]")
 
     #Add blank Audio (set the format)
     stream_num+=1
     command.extend(['-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate=44100:duration={clip["Duration"]}'])
-    filter_graph['a'].extend([f"[{stream_num}:a]"])
+    filter_graph['a'].insert(0,f"[{stream_num}:a]")
 
+    pprint(filter_graph)
 
-            """'
-            ffmpeg -i video.mp4 -filter_complex "[0:v]drawtext=text=My text here:fontsize=30:fontcolor=white:x=10:y=10:bordercolor=black:borderw=5:box=1:boxcolor=red:fontfile=/data/data/com.termux/files/home/homedir/.fonts/ttf-arkpandora-2.04/AerialBd.ttf" -y output.mp4
-            """
+    #use posh and pop
+    """
+    ffmpeg -i video.mp4 -filter_complex "[0:v]drawtext=text=My text here:fontsize=30:fontcolor=white:x=10:y=10:bordercolor=black:borderw=5:box=1:boxcolor=red:fontfile=/data/data/com.termux/files/home/homedir/.fonts/ttf-arkpandora-2.04/AerialBd.ttf" -y output.mp4
+    """
  
     def vid_graph(stream_num, media): #FIXME make sure to add filter processing
         return f"[{str(stream_num)}:v]overlay="\
@@ -584,7 +587,7 @@ def generate_clip(clip):
         else:
             # Log a warning for unknown media type
             logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
-    pprint.pprint(filter_graph)
+    pprint(filter_graph)
 
     #generate the full filter graph FIXME this will be wrong when filters are added
     filter_graph_str=""
