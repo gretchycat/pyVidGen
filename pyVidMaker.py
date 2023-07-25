@@ -414,20 +414,6 @@ def check_missing_media(clips):
     fix_durations(clips)
     return missing
 
-def convert_file_format(input_file, output_file, output_format):
-    """
-    Converts a media file from one format to another using FFmpeg.
-    """
-    command = f"ffmpeg -i {input_file} -y {output_file}"
-    execute_command(command)
-
-def adjust_volume(input_file, output_file, volume_level):
-    """
-    Adjusts the volume level of an audio file using FFmpeg.
-    """
-    command = f"ffmpeg -i {input_file} -af 'volume={volume_level}' -y {output_file}"
-    execute_command(command)
-
 def add_missing_streams(input_file):
     if file_exists(input_file):
         temp_output_file = 'temp_output.mp4'    
@@ -465,48 +451,6 @@ def add_missing_streams(input_file):
             os.remove(input_file)
             shutil.move(temp_output_file, input_file)
 
-def generate_clip_lib(clip):
-    # Create a list to store the input sources
-    inputs = []
-
-    # Add background color as input
-    if 'BackgroundColor' in clip:
-        background_color = translate_color(clip['BackgroundColor'])
-        inputs.append(ffmpeg.filter('color=c={0}:s={1}:duration={2}:f=lavfi'.format(background_color, clip['Resolution'], clip['Duration'])))
-
-    # Add other media types as input
-    for media in clip['Media']:
-        media_type = media['MediaType']
-        file_path = media['FilePath']
-        start_time = media['StartTime']
-        duration = media['Duration']
-        position = media['Position']
-        volume = media.get('Volume', '100%')
-        # Handle different media types
-        if media_type == 'Video':
-            inputs.append(ffmpeg.input(file_path, ss=start_time, t=duration).filter('scale',\
-                    w=position['width'], h=position['height']).filter('setpts',\
-                    'PTS-STARTPTS').filter('volume', volume))
-        elif media_type == 'Image':
-            inputs.append(ffmpeg.input(file_path, loop=1,\
-                    t=duration, fr=clip['FrameRate']).filter('scale',\
-                    w=position['width'], h=position['height']).filter('setpts',\
-                    'PTS-STARTPTS').filter('volume', volume))
-        elif media_type == 'Audio' or media_type=='TTS':
-            inputs.append(ffmpeg.input(file_path, ss=start_time, t=duration).filter('volume', volume))
-        elif media_type == 'TextOverlay':
-            inputs.append(ffmpeg.input('aevalsrc=0', t=duration).filter('volume', volume).output(file_path,\
-                    t=duration, vf="drawtext=text='{0}':fontsize={1}:fontcolor={2}:x={3}:y={4}".format(media['Text'], media['FontSize'],\
-                    translate_color(media['FontColor']), position['x'], position['y'])))
-    # Concatenate all the input sources
-    output = ffmpeg.concat(*inputs, v=1, a=1).output(clip['ClipFileName'],\
-            **{'c:v': 'libx264', 'c:a': 'aac', 'shortest': None,\
-            'vf': 'pad={0}:padcolor=black'.format(clip['Resolution']),\
-            'af': 'apad=pad_len=2*duration'})
-    # Run the FFmpeg command
-    ffmpeg.run(output, overwrite_output=True)
-    add_missing_streams(file_path)
-
 def generate_clip(clip):
     """
     Generates a video clip based on the provided XML clip data,
@@ -541,36 +485,48 @@ def generate_clip(clip):
     command.extend(['-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate=44100:duration={clip["Duration"]}'])
     inputs['a'].append(f"{stream_num}:a")
 
-    pprint(filter_graph)
-
     #use posh and pop
     """
     ffmpeg -i video.mp4 -filter_complex "[0:v]drawtext=text=My text here:fontsize=30:fontcolor=white:x=10:y=10:bordercolor=black:borderw=5:box=1:boxcolor=red:fontfile=/data/data/com.termux/files/home/homedir/.fonts/ttf-arkpandora-2.04/AerialBd.ttf" -y output.mp4
     """
- 
+
+    def swap(list):
+        list[-1], list[-2] = list[-2], list[-1]
+
     def vid_graph(inputs, media): #FIXME make sure to add filter processing
-        graph = ""
+        graph = []
         nonlocal v_output_num
-        
+        #scale=width:height[v] 
+        output=f"v{v_output_num}"
+        graph.append(f"[{str(inputs['v'].pop())}]"\
+                "scale="\
+                f"{str(media['Position']['width'])}:"\
+                f"{str(media['Position']['height'])}"\
+                f"[{output}]")
+        inputs['v'].append(output)
+        v_output_num+=1
+
         #overlay filter
         output=f"v{v_output_num}"
-        graph+= f"[{str(inputs['v'].pop())}]"\
+        swap(inputs['v'])
+        graph.append(f"[{str(inputs['v'].pop())}]"\
                 f"[{str(inputs['v'].pop())}]"\
                 "overlay="\
                 f"x={str(media['Position']['x'])}:"\
                 f"y={str(media['Position']['y'])}:"\
                 f"enable='between(t,{str(media['StartTime'])},{str(media['Duration'])})'"\
-                f"[{output}]"
+                f"[{output}]")
         inputs['v'].append(output)
         v_output_num+=1
 
-        return graph
+        return ';'.join(graph)
 
     def aud_graph(inputs, media): #FIXME make sure to add filter processing
         graph=""
         nonlocal a_output_num
 
         #amix filter
+        swap(inputs['a'])
         output=f"a{a_output_num}"
         graph+=f"[{str(inputs['a'].pop())}]"\
                 f"[{str(inputs['a'].pop())}]"\
@@ -588,14 +544,17 @@ def generate_clip(clip):
             command.extend([
                 "-i", media["FilePath"],
             ])
+            has_audio=False
             stream_num+=1
             inputs['v'].append(f"{stream_num}:v")
-            inputs['a'].append(f"{stream_num}:a")
+            if has_audio:
+                inputs['a'].append(f"{stream_num}:a")
             print("i"*80)
             print(media['FilePath'])
             pprint(inputs)
             filter_graph['v'].append(vid_graph(inputs, media))
-            filter_graph['a'].append(aud_graph(inputs, media))
+            if has_audio:
+                filter_graph['a'].append(aud_graph(inputs, media))
 
         elif media_type == 'Image':
             command.extend([
@@ -623,14 +582,21 @@ def generate_clip(clip):
             logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
     pprint(filter_graph)
 
-    #generate the full filter graph FIXME this will be wrong when filters are added
-    filter_graph_str =";".join(filter_graph['v'])+';'
-    filter_graph_str+=";".join(filter_graph['a'])
-    command.extend([
-        '-filter_complex', filter_graph_str,
-        '-map', f'{str(inputs["v"].pop())}:v',
-        '-map', f'{str(inputs["a"].pop())}:a',
-        '-c:v', 'h264',
+    #generate the full filter graph
+    v_s= ";".join(filter_graph['v'])
+    a_s= ";".join(filter_graph['a'])
+
+    if v_s !="" and a_s!="":
+        filter_graph_str=';'.join([v_s, a_s])
+    else:
+        filter_graph_str=f"{v_s}{a_s}"
+
+    command.extend(['-filter_complex', filter_graph_str])
+    if v_s!="":
+        command.extend(['-map', f'[{str(inputs["v"].pop())}]'])
+    if a_s!="":
+        command.extend(['-map', f'[{str(inputs["a"].pop())}]'])
+    command.extend(['-c:v', 'h264',
         '-c:a', 'aac',
         '-t', str(clip['Duration']),
         clip['ClipFileName']
