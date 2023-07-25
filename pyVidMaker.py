@@ -293,7 +293,8 @@ def get_file_format(file_path):
         pprint(json_data)
         return json_data
     else:
-        logging.errer(f"Missing File: {file_path}")
+        if(file_path):
+            logging.error(f"Missing File: {file_path}")
     return None 
 
 def get_file_duration(file_path):
@@ -302,6 +303,14 @@ def get_file_duration(file_path):
         duration = float(json_data['format']['duration'])
         return duration
     return 0.0
+
+def get_file_resolution(file_path):
+    json_data=get_file_format(file_path)
+    if json_data:
+        for st in json_data['streams']:
+            if st['codec_type']=='video':
+                return st['width'], st['height']
+    return 0, 0
 
 def has_audio(file_path):
     json_data=get_file_format(file_path)
@@ -396,8 +405,59 @@ def fix_durations(clips):
     pass
 
 def fix_placement(media):
-    defaultPosition = { "x":0, "y":0, "width":1920, "height":1080, "rotation":0.0 }
-    return defaultPosition
+    o_w, o_h=1920, 1080
+    w,h=o_w,o_h
+    x,y = 0,0
+    rot = 0.0
+    pad=0.05
+    PiP_scale=0.5
+
+    w_pad=pad*o_w
+    h_pad=pad*o_h
+    if(media):
+        i_w, i_h=get_file_resolution(media.get('FilePath'))
+        if i_w>0 and i_h>0:
+            h=o_h
+            w=i_w/i_h*o_h
+            if w>o_w:
+                w=o_w
+                h=i_h/i_w*o_w
+            x,y=(o_w/2)-(w/2), (o_h/2)-(h/2)
+            if media.get('Position'): 
+                pos_type=media['Position']
+                if pos_type.lower()=="stretch":
+                    x, y, w, h=0, 0, o_w, o_h
+                if pos_type.lower()=="aspect":
+                    x,y=(o_w-w)/2, (o_h-h)/2
+                if pos_type.lower()=="fill":
+                    h=o_h
+                    w=i_w/i_h*o_h
+                    if w<o_w:
+                        w=o_w
+                        h=i_h/i_w*o_w
+                    x,y=(o_w/2)-(w/2), (o_h/2)-(h/2)
+                if pos_type.lower()=="topleft":
+                    w=w*PiP_scale-h_pad
+                    h=h*PiP_scale-h_pad
+                    x=h_pad
+                    y=h_pad
+                if pos_type.lower()=="topright":
+                    w=w*PiP_scale-h_pad
+                    h=h*PiP_scale-h_pad
+                    x=o_w-h_pad-w
+                    y=h_pad
+                if pos_type.lower()=="bottomleft":
+                    w=w*PiP_scale-h_pad
+                    h=h*PiP_scale-h_pad
+                    x=h_pad
+                    y=o_h-h_pad-h
+                if pos_type.lower()=="bottomright":
+                    w=w*PiP_scale-h_pad
+                    h=h*PiP_scale-h_pad
+                    x=o_w-h_pad-w
+                    y=o_h-h_pad-h
+            
+    return { "x":x, "y":y, "width":w, "height":h, "rotation":rot }
 
 def check_missing_media(clips):
     """ also check for background audio file from global, chapter, clip """
