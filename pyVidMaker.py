@@ -276,29 +276,40 @@ def generate_temp_filename(fnkey=None):
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
     return f"temp_{timestamp}"
 
+def get_file_format(file_path):
+    if file_exists(file_path):
+        command = [
+            'ffprobe',
+            '-v',
+            'quiet',
+            '-show_streams',
+            '-show_format',
+            '-print_format',
+            'json',
+            file_path
+        ]
+        output = subprocess.check_output(command).decode('utf-8')
+        json_data = json.loads(output)
+        pprint(json_data)
+        return json_data
+    else:
+        logging.errer(f"Missing File: {file_path}")
+    return None 
+
 def get_file_duration(file_path):
-    command = [
-        'ffprobe',
-        '-v',
-        'error',
-        '-show_entries',
-        'format=duration',
-        '-of',
-        'json',
-        file_path
-    ]
-    
-    #print('\x1b[1;32m',end='')
-    #pprint(command)
-    output = subprocess.check_output(command).decode('utf-8')
+    json_data=get_file_format(file_path)
+    if json_data:
+        duration = float(json_data['format']['duration'])
+        return duration
+    return 0.0
 
-    duration_data = json.loads(output)
-
-    #print('\x1b[1;33m',end='')
-    #pprint(output)
-    #print('\x1b[0m',end='')
-    duration = float(duration_data['format']['duration'])
-    return duration
+def has_audio(file_path):
+    json_data=get_file_format(file_path)
+    if json_data:
+        for st in json_data['streams']:
+            if st['codec_type']=='audio':
+                return True
+    return False
 
 def parse_video_script(filename):
     tree = ET.parse(filename)
@@ -544,16 +555,16 @@ def generate_clip(clip):
             command.extend([
                 "-i", media["FilePath"],
             ])
-            has_audio=False
+            hasaudio=has_audio(media['FilePath'])
             stream_num+=1
             inputs['v'].append(f"{stream_num}:v")
-            if has_audio:
+            if hasaudio:
                 inputs['a'].append(f"{stream_num}:a")
             print("i"*80)
             print(media['FilePath'])
             pprint(inputs)
             filter_graph['v'].append(vid_graph(inputs, media))
-            if has_audio:
+            if hasaudio:
                 filter_graph['a'].append(aud_graph(inputs, media))
 
         elif media_type == 'Image':
