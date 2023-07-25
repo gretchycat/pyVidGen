@@ -9,13 +9,11 @@ from gtts import gTTS
 from imageSelect import imageSelect
 from urllib.parse import quote_plus
 
-# Set up logging
-#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 pexels_API_KEY = "JMdcZ8E4lrykP2QSaZHNxuXKlJRRjmmlvBQRvgu5CrHnSI30BF7mGLI7"
 pixabay_API_KEY = "38036450-c3aaf7be223f4d01b66e68cae"
 
 def setup_logging(log_file):
-    # Create a formatter with color
+    """ Create a formatter with color """
     stderr_formatter = colorlog.ColoredFormatter(
         '%(log_color)s%(levelname)s:%(reset)s%(message)s',
         log_colors={
@@ -86,9 +84,9 @@ def execute_command(command):
 
 def search_images(search_query, num_images, output_directory):
     search_images_pexels(search_query, num_images, output_directory)
-    search_images_pixabay(search_query, num_images, output_directory)
     #search_images_google(search_query, num_images, output_directory)
     #search_images_bing(search_query, num_images, output_directory)
+    search_images_pixabay(search_query, num_images, output_directory)
 
 def search_images_pexels(query, num_images, output_directory):
     base_url = "https://api.pexels.com/v1/search"
