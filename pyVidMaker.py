@@ -553,8 +553,6 @@ def generate_clip(clip):
     stream_num+=1
     command.extend(['-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate=44100:duration={clip["Duration"]}'])
     inputs['a'].append(f"{stream_num}:a")
-
-    #use posh and pop
     """
     ffmpeg -i video.mp4 -filter_complex "[0:v]drawtext=text=My text here:fontsize=30:fontcolor=white:x=10:y=10:bordercolor=black:borderw=5:box=1:boxcolor=red:fontfile=/data/data/com.termux/files/home/homedir/.fonts/ttf-arkpandora-2.04/AerialBd.ttf" -y output.mp4
     """
@@ -565,6 +563,20 @@ def generate_clip(clip):
     def vid_graph(inputs, media): #FIXME make sure to add filter processing
         graph = []
         nonlocal v_output_num
+        print("()"*40)
+        pprint(media)
+        filters=[]
+        for f in filters:   #TODO add supported filters (do audio too)
+            #apply video filters
+            output=f"v{v_output_num}"
+            graph.append(f"[{str(inputs['v'].pop())}]"\
+                    "{f}="\
+                    f"{str(media['Position']['width'])}:"\
+                    f"{str(media['Position']['height'])}"\
+                    f"[{output}]")
+            inputs['v'].append(output)
+            v_output_num+=1
+
         #scale=width:height[v] 
         output=f"v{v_output_num}"
         graph.append(f"[{str(inputs['v'].pop())}]"\
@@ -591,20 +603,27 @@ def generate_clip(clip):
         return ';'.join(graph)
 
     def aud_graph(inputs, media): #FIXME make sure to add filter processing
-        graph=""
+        graph=[]
         nonlocal a_output_num
+        #atrim filter
+        output=f"a{a_output_num}"
+        graph.append(f"[{str(inputs['a'].pop())}]"\
+                f"atrim=start={media['StartTime']}"\
+                f"[{output}]")
+        inputs['a'].append(output)
+        a_output_num+=1
 
         #amix filter
         swap(inputs['a'])
         output=f"a{a_output_num}"
-        graph+=f"[{str(inputs['a'].pop())}]"\
+        graph.append(f"[{str(inputs['a'].pop())}]"\
                 f"[{str(inputs['a'].pop())}]"\
                 "amix"\
-                f"[{output}]"
+                f"[{output}]")
         inputs['a'].append(output)
         a_output_num+=1
 
-        return graph
+        return ';'.join(graph)
 
     # Add media inputs and generate filter_graph data
     for media in clip['Media']:
