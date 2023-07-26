@@ -470,7 +470,7 @@ def fix_placement(media):
                     x=o_w-h_pad-w
                     y=o_h-h_pad-h
             
-    return { "x":x, "y":y, "width":w, "height":h, "rotation":rot }
+    return { "x":int(x), "y":int(y), "width":int(w), "height":int(h), "rotation":rot }
 
 def check_missing_media(clips):
     """ also check for background audio file from global, chapter, clip """
@@ -580,6 +580,29 @@ def generate_clip(clip):
         nonlocal v_output_num
         print("()"*40)
         #pprint(media)
+        #scale=width:height[v] 
+        output=f"v{v_output_num}"
+        graph.append(f"[{str(inputs['v'].pop())}]"\
+                "scale="\
+                f"{str(media['Position']['width'])}:"\
+                f"{str(media['Position']['height'])}"\
+                f"[{output}]")
+        inputs['v'].append(output)
+        v_output_num+=1
+
+        #overlay filter
+        output=f"v{v_output_num}"
+        swap(inputs['v'])
+        graph.append(f"[{str(inputs['v'].pop())}]"\
+                f"[{str(inputs['v'].pop())}]"\
+                "overlay="\
+                f"x={str(media['Position']['x'])}:"\
+                f"y={str(media['Position']['y'])}:"\
+                f"enable='between(t,{str(media['StartTime'])},{str(media['Duration'])})'"\
+                f"[{output}]")
+        inputs['v'].append(output)
+        v_output_num+=1
+
         filters=media.get('filters') or []
         for f in filters:   #TODO add supported filters (do audio too)
             if f['type'].lower()=='drawtext':
@@ -604,28 +627,6 @@ def generate_clip(clip):
             else:
                 logging.warning(f"Unknown filter: {f['type']}")
 
-        #scale=width:height[v] 
-        output=f"v{v_output_num}"
-        graph.append(f"[{str(inputs['v'].pop())}]"\
-                "scale="\
-                f"{str(media['Position']['width'])}:"\
-                f"{str(media['Position']['height'])}"\
-                f"[{output}]")
-        inputs['v'].append(output)
-        v_output_num+=1
-
-        #overlay filter
-        output=f"v{v_output_num}"
-        swap(inputs['v'])
-        graph.append(f"[{str(inputs['v'].pop())}]"\
-                f"[{str(inputs['v'].pop())}]"\
-                "overlay="\
-                f"x={str(media['Position']['x'])}:"\
-                f"y={str(media['Position']['y'])}:"\
-                f"enable='between(t,{str(media['StartTime'])},{str(media['Duration'])})'"\
-                f"[{output}]")
-        inputs['v'].append(output)
-        v_output_num+=1
 
         return ';'.join(graph)
 
