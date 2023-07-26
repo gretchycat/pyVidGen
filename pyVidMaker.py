@@ -288,7 +288,7 @@ def get_file_format(file_path):
         ]
         output = subprocess.check_output(command).decode('utf-8')
         json_data = json.loads(output)
-        pprint(json_data)
+        #pprint(json_data)
         return json_data
     else:
         if(file_path):
@@ -322,6 +322,8 @@ def parse_video_script(filename):
     tree = ET.parse(filename)
     root = tree.getroot()
     
+    #pprint(root)
+    #print(":-"*40)
     clips = []
     
     # Retrieve global defaults
@@ -361,10 +363,23 @@ def parse_video_script(filename):
 
             for child in media_element:
                 media_dict[child.tag] = child.text
+                if child.tag=='filters':
+                    filters=[]
+                    for filter in child:
+                        pprint(filter)
+                        f={}
+                        f['type']=filter.attrib['type']
+                        for prop in filter:
+                            f[prop.tag]=prop.text
+                        filters.append(f)
+                    media_dict[child.tag]=filters
             media_list.append(media_dict)
 
         clip_dict["Media"] = media_list
         clips.append(clip_dict)
+        print('\x1b[0;1;33m')
+        pprint(clips)
+        print(":"*80)
     return clips, global_defaults_dict
 
 def fix_durations(clips):
@@ -564,18 +579,30 @@ def generate_clip(clip):
         graph = []
         nonlocal v_output_num
         print("()"*40)
-        pprint(media)
-        filters=[]
+        #pprint(media)
+        filters=media.get('filters') or []
         for f in filters:   #TODO add supported filters (do audio too)
-            #apply video filters
-            output=f"v{v_output_num}"
-            graph.append(f"[{str(inputs['v'].pop())}]"\
-                    "{f}="\
-                    f"{str(media['Position']['width'])}:"\
-                    f"{str(media['Position']['height'])}"\
-                    f"[{output}]")
-            inputs['v'].append(output)
-            v_output_num+=1
+            if f['type'].lower()=='drawtext':
+                #apply video filters
+                output=f"v{v_output_num}"
+                graph.append(f"[{str(inputs['v'].pop())}]"\
+                        f"{f.get('type')}="\
+                        f"text={f.get('Text') or 'Lorem Ipsum'}:"\
+                        f"fontsize={f.get('FontSize') or 24}:"\
+                        f"fontfile={f.get('FontFile') or 'Arial'}:"\
+                        f"borderw={f.get('BorderWidth') or 1}:"\
+                        f"fontcolor={translate_color(f.get('FontColor'))}:"\
+                        f"x={f.get('X') or 0}:"\
+                        f"y={f.get('Y') or 0}:"\
+                        #f"t={f.get('StartTime') or 0}:"\
+                        #f"duration={f.get('Duration') or media['Duration']}:"\
+                        f"alpha={f.get('Alpha') or 1.0}:"\
+                        f"bordercolor={translate_color(f.get('BorderColor'))}"\
+                        f"[{output}]")
+                inputs['v'].append(output)
+                v_output_num+=1
+            else:
+                logging.warning(f"Unknown filter: {f['type']}")
 
         #scale=width:height[v] 
         output=f"v{v_output_num}"
@@ -639,7 +666,7 @@ def generate_clip(clip):
                 inputs['a'].append(f"{stream_num}:a")
             print("i"*80)
             print(media['FilePath'])
-            pprint(inputs)
+            #pprint(inputs)
             filter_graph['v'].append(vid_graph(inputs, media))
             if hasaudio:
                 filter_graph['a'].append(aud_graph(inputs, media))
@@ -653,7 +680,7 @@ def generate_clip(clip):
             inputs['v'].append(f"{stream_num}:v")
             print("i"*80)
             print(media['FilePath'])
-            pprint(inputs)
+            #pprint(inputs)
             filter_graph['v'].append(vid_graph(inputs, media))
         elif media_type in [ 'Audio', "TTS" ]:
             command.extend([
@@ -663,12 +690,12 @@ def generate_clip(clip):
             inputs['a'].append(f"{stream_num}:a")
             print("i"*80)
             print(media['FilePath'])
-            pprint(inputs)
+            #pprint(inputs)
             filter_graph['a'].append(aud_graph(inputs, media))
         else:
             # Log a warning for unknown media type
             logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
-    pprint(filter_graph)
+    #pprint(filter_graph)
 
     #generate the full filter graph
     v_s= ";".join(filter_graph['v'])

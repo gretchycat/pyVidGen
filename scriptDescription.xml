@@ -94,16 +94,16 @@
                 <Duration>6</Duration> <!-- Required   -1 is the full length of the clip-->
                 <Position>TopRight</Position>
                 <filters>   <!-- filters may apply to any media type. individual filters can be for audio and/or visual media. Unsupported filters will be ignored and throw a warning. -->
-                    <drawtext> <!-- only for visual media -->
+                    <filter type="drawtext"> <!-- only for visual media -->
                         <Text>Overlay text</Text> <!-- Mandatory - added to CC or sub in brackets. -->
                         <StartTime>4</StartTime> <!-- Optional default is 0-->
                         <Duration>-1</Duration><!-- -1 is full length of media default is -1-->
                         <FontSize>24</FontSize> <!-- Optional default is 24-->
                         <FontColor>#FFFFFF</FontColor> <!-- Optional -->
-                        <FontFace>Arial</FontFace> <!-- Optional -->
+                        <FontFile>font.ttf</FontFile> <!-- Optional -->
                         <BorderColor>#000</BorderColor> <!-- Border outline color -->
                         <BorderWidth>3</BorderWidth>
-                    </drawtext>
+                    </filter>
                 </filters>
             </Media>
               
