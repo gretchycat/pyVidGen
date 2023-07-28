@@ -1,3 +1,5 @@
 ffmpeg -framerate 30 -pattern_type glob -i 'input_directory/*.jpg' -c:v libx264 -pix_fmt yuv420p output.mp4
 
 ffmpeg -i video.mp4 -filter_complex "[0:v]drawtext=text=My text here:fontsize=30:fontcolor=white:x=10:y=10:bordercolor=black:borderw=5:box=1:boxcolor=red:fontfile=/data/data/com.termux/files/home/homedir/.fonts/ttf-arkpandora-2.04/AerialBd.ttf" -y output.mp4
+
+ffmpeg -i input1.mp4 -i input2.mp4 -i input3.mp4 -i background_music.mp3 -filter_complex "[0:v]fade=out:st=5:d=1:alpha=1,setpts=PTS-STARTPTS[v0];[1:v]fade=in:st=0:d=1:alpha=1,fade=out:st=5:d=1:alpha=1,setpts=PTS-STARTPTS+5/TB[v1];[2:v]fade=in:st=0:d=1:alpha=1,setpts=PTS-STARTPTS+10/TB[v2];[v0][1:v][v1][2:v][v2]concat=n=5:v=1:a=1[vv][aa];[aa][3:a]amix[audio]" -map "[vv]" -map "[audio]" -c:v libx264 -c:a aac output.mp

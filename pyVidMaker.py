@@ -763,36 +763,32 @@ def join_clips_basic(clips, background_audio_file, sub_file, output_file):
     execute_command(command)
 
 def join_clips(clips, background_audio_file, sub_file, output_file):
+    """
+    ffmpeg -i input1.mp4 -i input2.mp4 -i input3.mp4 -i background_music.mp3 -filter_complex "[0:v][1:v][2:v]concat=n=3:v=1:a=0[vv];[0:a][1:a][2:a]concat=n=3:v=0:a=1[aa];[aa][3:a]amix[am]" -map "[vv]" -map '[am]' -c:v libx264 -c:a aac output.mp4
+    """
     command = ['ffmpeg']
+    stream=0
+    filter_graph_vid=""
+    filter_graph_aud=""
+
     for clip in clips:
         command.extend(['-i', clip['ClipFileName']])
+        filter_graph_vid+=f'[{stream}:v]'
+        filter_graph_aud+=f'[{stream}:a]'
+        stream+=1
+    amap='aa'
+    if(stream>0):
+        filter_graph_vid+=f'concat=n={stream}:v=1:a=0[vv]'
+        filter_graph_aud+=f'concat=n={stream}:v=0:a=1[aa]'
     if background_audio_file:
         command.extend(['-i', background_audio_file])
+        filter_graph_aud+=f';[aa][{stream}:a]amix[am]'
+        amap='am'
     if sub_file:
         command.extend(['-i', sub_file])
-    """
-    filter_graph = ''
-    input_index = 0
-    for i in range(len(clips)):
-        filter_graph += '[{0}:v]setsar=1[v{0}];'.format(i)
-        input_index += 1
-    input_index = 0
-    for i in range(len(clips)):
-        filter_graph += '[v{0}]'.format(i)
-        input_index += 1
-    filter_graph += 'hstack=inputs={0}[v];'.format(len(clips))
-    input_index = 0
-    for i in range(len(clips)):
-        filter_graph += '[{0}:a]'.format(i)
-        input_index += 1
-    filter_graph += 'amerge=inputs={0}[a]'.format(len(clips))
-
-    command.extend(['-filter_complex', filter_graph])
-    command.extend(['-map', '[v]'])
-    command.extend(['-map', '[a]'])
-    """
-    command.extend(['-filter_complex', 'xfade=transition=fade:offset=0:duration=2,format=yuv420p'])
-    command.extend(['-movflags', '+faststart'])
+    command.extend(['-filter_complex', ';'.join([filter_graph_vid, filter_graph_aud])])
+    command.extend(['-map', f'[vv]'])
+    command.extend(['-map', f'[{amap}]'])
     command.extend(['-y'])
     command.extend(['-c:v', 'h264'])
     command.extend(['-c:a', 'aac'])
