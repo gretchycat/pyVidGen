@@ -433,15 +433,15 @@ def fix_placement(media):
             h=o_h
             w=i_w/i_h*o_h
             if w>o_w:
-                fill['width']=w
-                fill['height']=h
+                fill['width']=int(w)
+                fill['height']=int(h)
                 w=o_w
                 h=i_h/i_w*o_w
             else:
                 fill['width']=o_w
                 fill['height']=i_h/i_w*o_w
 
-            fill['x'],fill['y']=(o_w/2)-(fill['width']/2), (o_h/2)-(fill['height']/2)
+            fill['x'],fill['y']=int((o_w/2)-(fill['width']/2)), int((o_h/2)-(fill['height']/2))
             if media.get('Position'): 
                 pos_type=media['Position']
                 if pos_type.lower()=="stretch":
@@ -562,25 +562,35 @@ def generate_clip(clip):
     def vid_graph(inputs, media): #FIXME make sure to add filter processing
         graph = []
         nonlocal v_output_num
-
-        #zoompan 
-        output=f"v{v_output_num}"
-        graph.append(f"[{str(inputs['v'].pop())}]"\
-                "zoompan="\
-                f"'min(zoom+0.0015,1.5)':"\
-                f"d=700:"\
-                f"x='iw/2-(iw/zoom/2)':"\
-                f"y='ih/2-(ih/zoom/2)'"\
-                f"[{output}]")
-        inputs['v'].append(output)
-        v_output_num+=1
-
+        #"""
         #scale=width:height[v] 
-        if media['Position'].get('fill'):
+        if media['Position'].get('fill'): 
+            mediastream=str(inputs['v'].pop())
+            inputs['v'].append(mediastream)
             
             output=f"v{v_output_num}"
-            mediastream=str(inputs['v'].pop())
-            graph.append(f"[{mediastream}]"\
+            graph.append(f"[{str(inputs['v'].pop())}]"\
+                    "zoompan="\
+                    f"'min(zoom+0.0015,1.5)':"\
+                    f"d=700:"\
+                    f"x='iw/2-(iw/zoom/2)':"\
+                    f"y='ih/2-(ih/zoom/2)'"\
+                    f"[{output}]")
+            inputs['v'].append(output)
+            v_output_num+=1
+             
+            output=f"v{v_output_num}"   #FIXME THIS SHOULD DARKEN THE VID ADD BLUR
+            graph.append(f"[{str(inputs['v'].pop())}]"\
+                    "colorlevels="\
+                    f"rimin=0.058:"\
+                    f"gimin=0.058:"\
+                    f"bimin=0.058:"\
+                    f"[{output}]")
+            inputs['v'].append(output)
+            v_output_num+=1
+ 
+            output=f"v{v_output_num}"
+            graph.append(f"[{str(inputs['v'].pop())}]"\
                     "scale="\
                     f"{str(media['Position']['fill']['width'])}:"\
                     f"{str(media['Position']['fill']['height'])}"\
@@ -588,7 +598,7 @@ def generate_clip(clip):
             inputs['v'].append(output)
             v_output_num+=1
             output=f"v{v_output_num}"
-
+           
             swap(inputs['v'])
             graph.append(f"[{str(inputs['v'].pop())}]"\
                     f"[{str(inputs['v'].pop())}]"\
@@ -600,8 +610,20 @@ def generate_clip(clip):
             inputs['v'].append(output)
             inputs['v'].append(mediastream)
             v_output_num+=1
-            
-
+        #"""
+        #zoompan 
+        output=f"v{v_output_num}"
+ 
+        graph.append(f"[{str(inputs['v'].pop())}]"\
+                "zoompan="\
+                f"'min(zoom+0.0015,1.5)':"\
+                f"d=700:"\
+                f"x='iw/2-(iw/zoom/2)':"\
+                f"y='ih/2-(ih/zoom/2)'"\
+                f"[{output}]")
+        inputs['v'].append(output)
+        v_output_num+=1
+ 
         #scale=width:height[v] 
         output=f"v{v_output_num}"
         graph.append(f"[{str(inputs['v'].pop())}]"\
@@ -635,7 +657,6 @@ def generate_clip(clip):
                 v_output_num+=1
             else:
                 logging.warning(f"Unknown filter: {f['type']}")
-        print(';'.join(graph))
         #overlay filter
         output=f"v{v_output_num}"
         swap(inputs['v'])
@@ -649,6 +670,7 @@ def generate_clip(clip):
         inputs['v'].append(output)
         v_output_num+=1
 
+        print(';'.join(graph))
         return ';'.join(graph)
 
     def aud_graph(inputs, media): #FIXME make sure to add filter processing
