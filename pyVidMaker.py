@@ -679,7 +679,6 @@ def generate_clip(clip):
         inputs['v'].append(output)
         v_output_num+=1
 
-        print(';'.join(graph))
         return ';'.join(graph)
 
     def aud_graph(inputs, media): 
