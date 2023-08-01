@@ -1,7 +1,5 @@
-import os, hashlib, subprocess, logging, colorlog, datetime, glob
-import shutil, requests, json
-import urllib.parse
-import xml.etree.ElementTree as ET
+import os, hashlib, subprocess, logging, colorlog, datetime, glob, shutil
+import requests, json, urllib.parse, xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 from pprint import pprint
 from optparse import OptionParser
@@ -27,7 +25,6 @@ def setup_logging(log_file):
     log_formatter = colorlog.ColoredFormatter(
         '%(levelname)s:%(message)s'
     )
-
 
     # Create a file handler for the log file
     file_handler = logging.FileHandler(log_file)
@@ -63,24 +60,28 @@ def execute_command(command):
     Executes a command in the system and logs the command line and output.
     """
     try:
+        anim='/-\|'
+        frame=0
         output=""
         sepw=60
         logging.info('-'*sepw)
         logging.info(f"Executing command: {' '.join(command)}")
-        logging.info('-'*sepw)
+        #logging.info('-'*sepw)
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
         for line in process.stdout:
-            logging.debug(line.rstrip('\n'))
+            #logging.debug(line.rstrip('\n'))
             output+=line
+            print(f'{anim[frame%len(anim)]}\x1b[1A')
+            frame+=1
         process.wait()
         process.output=output
         if(process.returncode>0):
             logging.error(f"Error executing command.") 
-        logging.debug('-'*sepw)
+        #logging.debug('-'*sepw)
         return process
     except Exception as e:
         logging.error(f"Error executing command: {e}")
-        logging.error('-'*sepw)
+        #logging.error('-'*sepw)
 
 def search_images(search_query, num_images, output_directory):
     search_images_pexels(search_query, num_images, output_directory)
@@ -100,7 +101,7 @@ def search_images_pexels(query, num_images, output_directory):
         photos = data.get("photos", [])
 
         if not photos:
-            print("No images found.")
+            logging.warning("No images found.")
             return
 
         # Create output directory if it doesn't exist
@@ -118,13 +119,13 @@ def search_images_pexels(query, num_images, output_directory):
             if response.status_code == 200:
                 with open(image_path, "wb") as file:
                     file.write(response.content)
-                print(f"Downloaded image: {image_filename}")
+                logging.info(f"Downloaded image: {image_filename}")
             else:
-                print(f"Error downloading image {image_filename}. Status code: {response.status_code}")
+                logging.error(f"Error downloading image {image_filename}. Status code: {response.status_code}")
 
-        print(f"{num_images} images downloaded to {output_directory}")
+        logging.info(f"{num_images} images downloaded to {output_directory}")
     else:
-        print(f"Error occurred while searching images. Status code: {response.status_code}")
+        logging.error(f"Error occurred while searching images. Status code: {response.status_code}")
 
 def search_images_pixabay(query, num_images, output_directory):
     base_url = "https://pixabay.com/api/"
@@ -138,7 +139,7 @@ def search_images_pixabay(query, num_images, output_directory):
         data = response.json()
         images = data.get("hits", [])
         if not images:
-            print("No images found.")
+            logging.error("No images found.")
             return
         # Create output directory if it doesn't exist
         os.makedirs(output_directory, exist_ok=True)
@@ -153,12 +154,12 @@ def search_images_pixabay(query, num_images, output_directory):
             if response.status_code == 200:
                 with open(image_path, "wb") as file:
                     file.write(response.content)
-                print(f"Downloaded image {i+1}/{num_images}: {image_filename}")
+                logging.info(f"Downloaded image {i+1}/{num_images}: {image_filename}")
             else:
-                print(f"Error downloading image {i+1}/{num_images}. Status code: {response.status_code}")
-        print(f"{num_images} images downloaded to {output_directory}")
+                logging.error(f"Error downloading image {i+1}/{num_images}. Status code: {response.status_code}")
+        logging.info(f"{num_images} images downloaded to {output_directory}")
     else:
-        print(f"Error occurred while searching images. Status code: {response.status_code}")
+        logging.error(f"Error occurred while searching images. Status code: {response.status_code}")
 
 def search_images_bing(search_query, num_images, output_directory):
     search_query_encoded = quote_plus(search_query)
@@ -366,7 +367,7 @@ def parse_video_script(filename):
                 if child.tag=='filters':
                     filters=[]
                     for filter in child:
-                        pprint(filter)
+                        #pprint(filter)
                         f={}
                         f['type']=filter.attrib['type']
                         for prop in filter:
@@ -377,9 +378,9 @@ def parse_video_script(filename):
 
         clip_dict["Media"] = media_list
         clips.append(clip_dict)
-        print('\x1b[0;1;33m')
-        pprint(clips)
-        print(":"*80)
+        #print('\x1b[0;1;33m')
+        #pprint(clips)
+        #print(":"*80)
     return clips, global_defaults_dict
 
 def fix_durations(clips):
@@ -400,7 +401,6 @@ def fix_durations(clips):
                     if media['MediaType']=='Image' or media['MediaType'] == 'TextOverlay':
                         if passes>0:
                             media['Duration']=clipLength-float(media['StartTime'])
-                            logging.debug(f'Setting max Duration '+str(media['Duration']))
                     else:
                         if media.get('FilePath'):
                             media['Duration']=get_file_duration(media['FilePath'])
@@ -408,13 +408,12 @@ def fix_durations(clips):
                             clipLength=max(float(media['StartTime'])+float(media['Duration']), clipLength)
                 else:
                     clipLength=max(float(media['StartTime'])+float(media['Duration']), clipLength)
-
             passes=passes+1
             clip['Duration']=clipLength
             clip['StartTime']=totalDuration
-            clip['Resolution']='1920x1080'
+            #clip['Resolution']='1920x1080'
             totalDuration+=clipLength
-            logging.debug(f'Setting clip Duration '+str(clip['Duration']))
+        logging.debug(f'Setting clip Duration '+str(clip['Duration']))
     pass
 
 def fix_placement(media):
@@ -427,15 +426,22 @@ def fix_placement(media):
 
     w_pad=pad*o_w
     h_pad=pad*o_h
+    fill={}
     if(media):
         i_w, i_h=get_file_resolution(media.get('FilePath'))
         if i_w>0 and i_h>0:
             h=o_h
             w=i_w/i_h*o_h
             if w>o_w:
+                fill['width']=w
+                fill['height']=h
                 w=o_w
                 h=i_h/i_w*o_w
-            x,y=(o_w/2)-(w/2), (o_h/2)-(h/2)
+            else:
+                fill['width']=o_w
+                fill['height']=i_h/i_w*o_w
+
+            fill['x'],fill['y']=(o_w/2)-(fill['width']/2), (o_h/2)-(fill['height']/2)
             if media.get('Position'): 
                 pos_type=media['Position']
                 if pos_type.lower()=="stretch":
@@ -443,12 +449,8 @@ def fix_placement(media):
                 if pos_type.lower()=="aspect":
                     x,y=(o_w-w)/2, (o_h-h)/2
                 if pos_type.lower()=="fill":
-                    h=o_h
-                    w=i_w/i_h*o_h
-                    if w<o_w:
-                        w=o_w
-                        h=i_h/i_w*o_w
-                    x,y=(o_w/2)-(w/2), (o_h/2)-(h/2)
+                    w, h, x, y=fill['width'],fill['height'], fill['x'], fill['y']
+                    fill=None
                 if pos_type.lower()=="topleft":
                     w=w*PiP_scale-h_pad
                     h=h*PiP_scale-h_pad
@@ -469,8 +471,7 @@ def fix_placement(media):
                     h=h*PiP_scale-h_pad
                     x=o_w-h_pad-w
                     y=o_h-h_pad-h
-            
-    return { "x":int(x), "y":int(y), "width":int(w), "height":int(h), "rotation":rot }
+    return { "x":int(x), "y":int(y), "width":int(w), "height":int(h), "rotation":rot, 'fill':fill }
 
 def check_missing_media(clips):
     """ also check for background audio file from global, chapter, clip """
@@ -539,20 +540,6 @@ def generate_clip(clip):
     """
     Generates a video clip based on the provided XML clip data,
     handling the positioning and timing of media elements within the clip.
-
-    ffmpeg 
-        -f lavfi -i color=#000000:size=1920x1080:duration=23.0 
-        -i video.mp4 
-        -loop 1 -i image.jpg 
-        -i audio.mp3 
-        -i tts_audio1.wav 
-        -filter_complex [0:v][1:v]overlay=x=0:y=0:enable='between(t,0,9.0)'[v0];
-                        [v0][2:v]overlay=x=0:y=0:enable='between(t,2,6)';
-                        [3:a][4:a]amix 
-        -c:v h264 
-        -c:a aac 
-        -y 
-        temp_20230716013512387103.mp4 
     """
     command = ['ffmpeg']
     filter_graph={"v":[], "a":[]}
@@ -568,9 +555,6 @@ def generate_clip(clip):
     stream_num+=1
     command.extend(['-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate=44100:duration={clip["Duration"]}'])
     inputs['a'].append(f"{stream_num}:a")
-    """
-    ffmpeg -i video.mp4 -filter_complex "[0:v]drawtext=text=My text here:fontsize=30:fontcolor=white:x=10:y=10:bordercolor=black:borderw=5:box=1:boxcolor=red:fontfile=/data/data/com.termux/files/home/homedir/.fonts/ttf-arkpandora-2.04/AerialBd.ttf" -y output.mp4
-    """
 
     def swap(list):
         list[-1], list[-2] = list[-2], list[-1]
@@ -578,8 +562,44 @@ def generate_clip(clip):
     def vid_graph(inputs, media): #FIXME make sure to add filter processing
         graph = []
         nonlocal v_output_num
-        print("()"*40)
-        #pprint(media)
+
+        #zoompan 
+        output=f"v{v_output_num}"
+        graph.append(f"[{str(inputs['v'].pop())}]"\
+                "zoompan="\
+                f"'min(zoom+0.0015,1.5)':"\
+                f"d=700:"\
+                f"x='iw/2-(iw/zoom/2)':"\
+                f"y='ih/2-(ih/zoom/2)'"\
+                f"[{output}]")
+        inputs['v'].append(output)
+        v_output_num+=1
+
+        #scale=width:height[v] 
+        if media['Position'].get('fill'):
+            """
+            output=f"v{v_output_num}"
+            graph.append(f"[{str(inputs['v'].pop())}]"\
+                    "scale="\
+                    f"{str(media['Position']['fill']['width'])}:"\
+                    f"{str(media['Position']['fill']['height'])}"\
+                    f"[{output}]")
+            inputs['v'].append(output)
+            v_output_num+=1
+            output=f"v{v_output_num}"
+
+            swap(inputs['v'])
+            graph.append(f"[{str(inputs['v'].pop())}]"\
+                    f"[{str(inputs['v'].pop())}]"\
+                    "overlay="\
+                    f"x={str(media['Position']['fill']['x'])}:"\
+                    f"y={str(media['Position']['fill']['y'])}:"\
+                    f"enable='between(t,{str(media['StartTime'])},{str(media['Duration'])})'"\
+                    f"[{output}]")
+            inputs['v'].append(output)
+            v_output_num+=1
+            """
+
         #scale=width:height[v] 
         output=f"v{v_output_num}"
         graph.append(f"[{str(inputs['v'].pop())}]"\
@@ -613,7 +633,7 @@ def generate_clip(clip):
                 v_output_num+=1
             else:
                 logging.warning(f"Unknown filter: {f['type']}")
-
+        print(';'.join(graph))
         #overlay filter
         output=f"v{v_output_num}"
         swap(inputs['v'])
@@ -632,14 +652,15 @@ def generate_clip(clip):
     def aud_graph(inputs, media): #FIXME make sure to add filter processing
         graph=[]
         nonlocal a_output_num
-        #atrim filter
+        
+        #volume filter
         output=f"a{a_output_num}"
         graph.append(f"[{str(inputs['a'].pop())}]"\
-                f"atrim=start={media['StartTime']}"\
+                f"volume={float(media['Volume'])/100.0}"\
                 f"[{output}]")
         inputs['a'].append(output)
         a_output_num+=1
-
+        
         #amix filter
         swap(inputs['a'])
         output=f"a{a_output_num}"
@@ -664,8 +685,8 @@ def generate_clip(clip):
             inputs['v'].append(f"{stream_num}:v")
             if hasaudio:
                 inputs['a'].append(f"{stream_num}:a")
-            print("i"*80)
-            print(media['FilePath'])
+            #print("i"*80)
+            #print(media['FilePath'])
             #pprint(inputs)
             filter_graph['v'].append(vid_graph(inputs, media))
             if hasaudio:
@@ -678,8 +699,8 @@ def generate_clip(clip):
             ])
             stream_num+=1
             inputs['v'].append(f"{stream_num}:v")
-            print("i"*80)
-            print(media['FilePath'])
+            #print("i"*80)
+            #print(media['FilePath'])
             #pprint(inputs)
             filter_graph['v'].append(vid_graph(inputs, media))
         elif media_type in [ 'Audio', "TTS" ]:
@@ -688,8 +709,8 @@ def generate_clip(clip):
             ])
             stream_num+=1
             inputs['a'].append(f"{stream_num}:a")
-            print("i"*80)
-            print(media['FilePath'])
+            #print("i"*80)
+            #print(media['FilePath'])
             #pprint(inputs)
             filter_graph['a'].append(aud_graph(inputs, media))
         else:
@@ -737,31 +758,6 @@ def generate_srt(clips, filename):
                 count += 1
         f.close()
 
-def join_clips_basic(clips, background_audio_file, sub_file, output_file):
-    """
-    ffmpeg -f concat -i file.txt -c:v libx264  -pix_fmt yuv420p  -c:a aac output.mp4
-    """
-    with open('temp_inputs.txt', 'w') as file:
-        for clip in clips:
-            file.write(f'file {clip["ClipFileName"]}\n')
-        file.close()
-
-    command = ['ffmpeg']
-    command.extend(['-f', 'concat','-i', 'temp_inputs.txt'])
-
-    if background_audio_file:
-        command.extend(['-i', background_audio_file])
-    if sub_file:
-        command.extend(['-i', sub_file])
-    command.extend(['-y'])
-    command.extend(['-c:v', 'h264'])
-    command.extend(['-c:a', 'aac'])
-    command.extend(['-pix_fmt', 'yuv420p'])
-    command.append(output_file)
-
-    # Execute the command and capture the output
-    execute_command(command)
-
 def join_clips(clips, background_audio_file, sub_file, output_file):
     """
     ffmpeg -i input1.mp4 -i input2.mp4 -i input3.mp4 -i background_music.mp3 -filter_complex "[0:v][1:v][2:v]concat=n=3:v=1:a=0[vv];[0:a][1:a][2:a]concat=n=3:v=0:a=1[aa];[aa][3:a]amix[am]" -map "[vv]" -map '[am]' -c:v libx264 -c:a aac output.mp4
@@ -770,19 +766,27 @@ def join_clips(clips, background_audio_file, sub_file, output_file):
     stream=0
     filter_graph_vid=""
     filter_graph_aud=""
-
+    time=0.0
     for clip in clips:
         command.extend(['-i', clip['ClipFileName']])
         filter_graph_vid+=f'[{stream}:v]'
         filter_graph_aud+=f'[{stream}:a]'
         stream+=1
+        time+=clip['Duration']
     amap='aa'
-    if(stream>0):
+    if(stream>0):#use xfade filter for transitions
         filter_graph_vid+=f'concat=n={stream}:v=1:a=0[vv]'
         filter_graph_aud+=f'concat=n={stream}:v=0:a=1[aa]'
     if background_audio_file:
+        loop=True
+        music_volume=0.05
+        if (loop):
+            command.extend(['-stream_loop', '-1'])
         command.extend(['-i', background_audio_file])
-        filter_graph_aud+=f';[aa][{stream}:a]amix[am]'
+        #if(loop):
+        #    filter_graph_aud+=f';[{stream}:a]aloop=loop=-1[bgmloop]'
+        filter_graph_aud+=f';[{stream}:a]volume={music_volume}[bgm]'
+        filter_graph_aud+=f';[aa][bgm]amix[am]'
         amap='am'
     if sub_file:
         command.extend(['-i', sub_file])
@@ -790,6 +794,7 @@ def join_clips(clips, background_audio_file, sub_file, output_file):
     command.extend(['-map', f'[vv]'])
     command.extend(['-map', f'[{amap}]'])
     command.extend(['-y'])
+    command.extend(['-t', f'{time}'])
     command.extend(['-c:v', 'h264'])
     command.extend(['-c:a', 'aac'])
     command.extend(['-pix_fmt', 'yuv420p'])

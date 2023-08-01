@@ -20,18 +20,14 @@
     <Defaults>
         <!-- Default background color for the video -->
         <BackgroundColor>#000000</BackgroundColor> <!-- Optional. default is #000 -->
-        
         <!-- Background music file for the video -->
         <BackgroundMusic>music.mp3</BackgroundMusic> <!-- Optional -->
-        
         <!-- Specify whether the background music should be looped -->
         <LoopBGM>true</LoopBGM> <!-- Optional, default is true -->
-        
         <!-- Volume level for the background music -->
         <BackgroundVolume>5%</BackgroundVolume> <!-- Optional, default is 5% -->
         <MaxDuration type="crop">10</MaxDuration> <!-- Duration override forces a duration. Optional. The default is the natural length of all media sources combined. type can be crop or stretch -->
-            
-            <!-- Transition type for the transition into the next clip -->
+        <!-- Transition type for the transition into the next clip -->
         <TransitionType>fade</TransitionType> <!-- Optional -->
         <TransitionTime>1.0</TransitionTime>
         <Resolution>1920x1080</Resolution>
@@ -67,10 +63,8 @@
                 Duration of the clip throw a warning -->
             <Properties>
                 <Duration type="crop">10</Duration> <!-- Duration override forces a duration. Optional. The default is the natural length of all media sources combined. type can be crop or stretch -->
-                
                 <!-- Transition type for the transition into the next clip -->
                 <TransitionType>fade</TransitionType> <!-- Optional -->
-                
                 <!-- Transition duration for the transition into the next clip -->
                 <TransitionTime>2</TransitionTime> <!-- Optional -->
             </Properties>
@@ -84,7 +78,6 @@
                 <Volume>100</Volume> <!-- Optional, default is 100 --> 
                 <Position>fill</Position> <!-- all media types with a visual part may have this property. Positions may Aspect, Stretch, Fill, TopLeft, TopRight, BottomLeft, BottomRight or XxY,WxH. default is Aspect  X, Y, W, H may be percentages.-->
             </Media>
-            
             <!-- Image file to be included in the clip -->
             <Media type="Image">
                 <FilePath>image.jpg</FilePath> <!-- Mandatory -->
