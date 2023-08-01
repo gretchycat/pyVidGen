@@ -570,18 +570,18 @@ def generate_clip(clip):
         if media['Position'].get('fill'): 
             mediastream=str(inputs['v'].pop())
             inputs['v'].append(mediastream)
-            """ 
-            output=f"v{v_output_num}"
-            graph.append(f"[{str(inputs['v'].pop())}]"\
-                    "zoompan="\
-                    f"'min(zoom+0.0015,1.5)':"\
-                    f"d=700:"\
-                    f"x='iw/2-(iw/zoom/2)':"\
-                    f"y='ih/2-(ih/zoom/2)'"\
-                    f"[{output}]")
-            inputs['v'].append(output)
-            v_output_num+=1
-            """ 
+            if media['MediaType'].lower()=='image': 
+                output=f"v{v_output_num}"
+                graph.append(f"[{str(inputs['v'].pop())}]"\
+                        "zoompan="\
+                        f"'min(zoom+0.0015,1.5)':"\
+                        f"d=700:"\
+                        f"x='iw/2-(iw/zoom/2)':"\
+                        f"y='ih/2-(ih/zoom/2)'"\
+                        f"[{output}]")
+                inputs['v'].append(output)
+                v_output_num+=1
+                 
             output=f"v{v_output_num}"   
             graph.append(f"[{str(inputs['v'].pop())}]"\
                     "eq="\
@@ -621,17 +621,18 @@ def generate_clip(clip):
         #"""
         #zoompan 
         output=f"v{v_output_num}"
-        """ 
-        graph.append(f"[{str(inputs['v'].pop())}]"\
-                "zoompan="\
-                f"'min(zoom+0.0015,1.5)':"\
-                f"d=700:"\
-                f"x='iw/2-(iw/zoom/2)':"\
-                f"y='ih/2-(ih/zoom/2)'"\
-                f"[{output}]")
-        inputs['v'].append(output)
-        v_output_num+=1
-        """
+
+        if media['MediaType'].lower()=='image': 
+            graph.append(f"[{str(inputs['v'].pop())}]"\
+                    "zoompan="\
+                    f"'min(zoom+0.0015,1.5)':"\
+                    f"d=700:"\
+                    f"x='iw/2-(iw/zoom/2)':"\
+                    f"y='ih/2-(ih/zoom/2)'"\
+                    f"[{output}]")
+            inputs['v'].append(output)
+            v_output_num+=1
+
         #scale=width:height[v] 
         output=f"v{v_output_num}"
         graph.append(f"[{str(inputs['v'].pop())}]"\
@@ -643,7 +644,7 @@ def generate_clip(clip):
         v_output_num+=1
 
         filters=media.get('filters') or []
-        for f in filters:`
+        for f in filters:
             if f['type'].lower()=='drawtext':
                 #apply video filters
                 output=f"v{v_output_num}"
