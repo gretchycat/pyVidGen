@@ -427,6 +427,7 @@ def fix_placement(media):
     w_pad=pad*o_w
     h_pad=pad*o_h
     fill={}
+    pos_type=''
     if(media):
         i_w, i_h=get_file_resolution(media.get('FilePath'))
         if i_w>0 and i_h>0:
@@ -440,13 +441,13 @@ def fix_placement(media):
             else:
                 fill['width']=o_w
                 fill['height']=i_h/i_w*o_w
-
             fill['x'],fill['y']=int((o_w/2)-(fill['width']/2)), int((o_h/2)-(fill['height']/2))
             if media.get('Position'): 
                 pos_type=media['Position']
                 if pos_type.lower()=="stretch":
                     x, y, w, h=0, 0, o_w, o_h
                 if pos_type.lower()=="aspect":
+                    
                     x,y=(o_w-w)/2, (o_h-h)/2
                 if pos_type.lower()=="fill":
                     w, h, x, y=fill['width'],fill['height'], fill['x'], fill['y']
@@ -471,7 +472,9 @@ def fix_placement(media):
                     h=h*PiP_scale-h_pad
                     x=o_w-h_pad-w
                     y=o_h-h_pad-h
-    return { "x":int(x), "y":int(y), "width":int(w), "height":int(h), "rotation":rot, 'fill':fill }
+    if pos_type.lower()!='aspect':
+        fill=None
+    return { "x":int(x), "y":int(y), "width":int(w), "height":int(h), "rotation":rot, 'fill':fill, 'pos':pos_type }
 
 def check_missing_media(clips):
     """ also check for background audio file from global, chapter, clip """
@@ -559,7 +562,7 @@ def generate_clip(clip):
     def swap(list):
         list[-1], list[-2] = list[-2], list[-1]
 
-    def vid_graph(inputs, media): #FIXME make sure to add filter processing
+    def vid_graph(inputs, media): 
         graph = []
         nonlocal v_output_num
         #"""
@@ -567,7 +570,7 @@ def generate_clip(clip):
         if media['Position'].get('fill'): 
             mediastream=str(inputs['v'].pop())
             inputs['v'].append(mediastream)
-            
+            """ 
             output=f"v{v_output_num}"
             graph.append(f"[{str(inputs['v'].pop())}]"\
                     "zoompan="\
@@ -578,13 +581,18 @@ def generate_clip(clip):
                     f"[{output}]")
             inputs['v'].append(output)
             v_output_num+=1
-             
-            output=f"v{v_output_num}"   #FIXME THIS SHOULD DARKEN THE VID ADD BLUR
+            """ 
+            output=f"v{v_output_num}"   
             graph.append(f"[{str(inputs['v'].pop())}]"\
-                    "colorlevels="\
-                    f"rimin=0.058:"\
-                    f"gimin=0.058:"\
-                    f"bimin=0.058:"\
+                    "eq="\
+                    f"brightness=-0.25"\
+                    f"[{output}]")
+            inputs['v'].append(output)
+            v_output_num+=1
+              
+            output=f"v{v_output_num}"
+            graph.append(f"[{str(inputs['v'].pop())}]"\
+                    "boxblur=5:1"\
                     f"[{output}]")
             inputs['v'].append(output)
             v_output_num+=1
@@ -613,7 +621,7 @@ def generate_clip(clip):
         #"""
         #zoompan 
         output=f"v{v_output_num}"
- 
+        """ 
         graph.append(f"[{str(inputs['v'].pop())}]"\
                 "zoompan="\
                 f"'min(zoom+0.0015,1.5)':"\
@@ -623,7 +631,7 @@ def generate_clip(clip):
                 f"[{output}]")
         inputs['v'].append(output)
         v_output_num+=1
- 
+        """
         #scale=width:height[v] 
         output=f"v{v_output_num}"
         graph.append(f"[{str(inputs['v'].pop())}]"\
@@ -635,7 +643,7 @@ def generate_clip(clip):
         v_output_num+=1
 
         filters=media.get('filters') or []
-        for f in filters:   #TODO add supported filters (do audio too)
+        for f in filters:`
             if f['type'].lower()=='drawtext':
                 #apply video filters
                 output=f"v{v_output_num}"
@@ -673,14 +681,15 @@ def generate_clip(clip):
         print(';'.join(graph))
         return ';'.join(graph)
 
-    def aud_graph(inputs, media): #FIXME make sure to add filter processing
+    def aud_graph(inputs, media): 
         graph=[]
         nonlocal a_output_num
         
         #volume filter
+        volume=float(media.get('Volume') or 100.0)/100.0
         output=f"a{a_output_num}"
         graph.append(f"[{str(inputs['a'].pop())}]"\
-                f"volume={float(media['Volume'])/100.0}"\
+                f"volume={volume}"\
                 f"[{output}]")
         inputs['a'].append(output)
         a_output_num+=1

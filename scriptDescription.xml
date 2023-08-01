@@ -51,7 +51,7 @@
             <Clip>
                 <Media type="Video">
                     <FilePath>myname.mp4</FilePath> <!-- Mandatory -->
-                    <Position>fill</Position>
+                    <Position>aspect</Position>
                     <Duration>-1</Duration>
                 </Media> 
             </Clip>
