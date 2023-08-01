@@ -577,9 +577,10 @@ def generate_clip(clip):
 
         #scale=width:height[v] 
         if media['Position'].get('fill'):
-            """
+            
             output=f"v{v_output_num}"
-            graph.append(f"[{str(inputs['v'].pop())}]"\
+            mediastream=str(inputs['v'].pop())
+            graph.append(f"[{mediastream}]"\
                     "scale="\
                     f"{str(media['Position']['fill']['width'])}:"\
                     f"{str(media['Position']['fill']['height'])}"\
@@ -597,8 +598,9 @@ def generate_clip(clip):
                     f"enable='between(t,{str(media['StartTime'])},{str(media['Duration'])})'"\
                     f"[{output}]")
             inputs['v'].append(output)
+            inputs['v'].append(mediastream)
             v_output_num+=1
-            """
+            
 
         #scale=width:height[v] 
         output=f"v{v_output_num}"
