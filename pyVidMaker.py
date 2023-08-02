@@ -440,7 +440,7 @@ def fix_placement(media):
                 h=i_h/i_w*o_w
             else:
                 fill['width']=o_w
-                fill['height']=i_h/i_w*o_w
+                fill['height']=int(i_h/i_w*o_w)
             fill['x'],fill['y']=int((o_w/2)-(fill['width']/2)), int((o_h/2)-(fill['height']/2))
             if media.get('Position'): 
                 pos_type=media['Position']
