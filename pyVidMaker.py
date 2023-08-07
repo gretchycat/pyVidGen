@@ -117,11 +117,11 @@ def get_missing_file(type, file_path, description, script, si):
             generate_tts_audio_buffer(file_path, script)
         elif type=="Image":
             verb="Found"
+            shutil.rmtree('image_temp', ignore_errors=True)
             search_images(description, 20, 'image_temp', si)
-            #print(';getting image')
             imgs=imageSelect()
             imgs.interface(file_path, glob.glob('image_temp/*'), description)
-            shutil.rmtree('image_temp')
+            shutil.rmtree('image_temp', ignore_errors=True)
         missing=0 if file_exists(file_path) else 1
         if missing>0:
             verb="Missing"

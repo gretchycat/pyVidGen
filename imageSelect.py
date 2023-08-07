@@ -247,8 +247,8 @@ class imageSelect:
             # Save a copy of the source image to the destination path
             source_image.save(destination_path)
             print(f"Image copied from {source_path} to {destination_path}")
-        except IOError:
-            print(f"Unable to copy image from {source_path} to {destination_path}")
+        except IOError as e:
+            print(f"Unable to copy image from {source_path} to {destination_path} ({e})")
 
     def interface(self, target, images, describe):
         buffer=""
