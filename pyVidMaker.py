@@ -11,6 +11,10 @@ from SearchImages import SearchImages
 pexels_API_KEY = "JMdcZ8E4lrykP2QSaZHNxuXKlJRRjmmlvBQRvgu5CrHnSI30BF7mGLI7"
 pixabay_API_KEY = "38036450-c3aaf7be223f4d01b66e68cae"
 
+class VidMaker:#TODO move functions to this class
+    def __init__(self):
+        pass
+
 def setup_logging(log_file):
     """ Create a formatter with color """
     stderr_formatter = colorlog.ColoredFormatter(
@@ -426,12 +430,14 @@ def generate_clip(clip):
         if media['Position'].get('fill'): 
             mediastream=str(inputs['v'].pop())
             inputs['v'].append(mediastream)
+            duration=30.0#FIXME
+            fps=60
             if media['MediaType'].lower()=='image': 
                 output=f"v{v_output_num}"
                 graph.append(f"[{str(inputs['v'].pop())}]"\
                         "zoompan="\
-                        f"'min(zoom+0.0015,1.5)':"\
-                        f"d=700:"\
+                        f"'min(zoom+0.00075,1.5)':"\
+                        f"d={int(duration*fps)}:"\
                         f"x='iw/2-(iw/zoom/2)':"\
                         f"y='ih/2-(ih/zoom/2)'"\
                         f"[{output}]")
@@ -478,11 +484,11 @@ def generate_clip(clip):
         #zoompan 
         output=f"v{v_output_num}"
 
-        if media['MediaType'].lower()=='image': 
+        if media['MediaType'].lower()=='image': #FIXME
             graph.append(f"[{str(inputs['v'].pop())}]"\
                     "zoompan="\
-                    f"'min(zoom+0.0015,1.5)':"\
-                    f"d=700:"\
+                    f"'min(zoom+0.00075,1.5)':"\
+                    f"d={int(duration*fps)}:"\
                     f"x='iw/2-(iw/zoom/2)':"\
                     f"y='ih/2-(ih/zoom/2)'"\
                     f"[{output}]")
