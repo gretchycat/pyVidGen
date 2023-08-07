@@ -245,7 +245,7 @@ class imageSelect:
             # Open the source image
             source_image = Image.open(source_path)
             # Save a copy of the source image to the destination path
-            source_image.save(destination_path)
+            source_image.save(destination_path, format='PNG')
             print(f"Image copied from {source_path} to {destination_path}")
         except IOError as e:
             print(f"Unable to copy image from {source_path} to {destination_path} ({e})")
