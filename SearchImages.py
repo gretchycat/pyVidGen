@@ -6,9 +6,6 @@ from urllib.parse import quote_plus
 import urllib.parse
 import os
 
-pexels_API_KEY = "JMdcZ8E4lrykP2QSaZHNxuXKlJRRjmmlvBQRvgu5CrHnSI30BF7mGLI7"
-pixabay_API_KEY = "38036450-c3aaf7be223f4d01b66e68cae"
-
 class SearchImages:
     def __init__(self, pexels, pixabay, log):
         self.pexels_API_KEY=pexels
@@ -160,8 +157,11 @@ def main():
     parser.add_argument('query', type=str, help='search query')
     parser.add_argument('num_images', type=int, help='number of images to download')
     parser.add_argument('destination_dir', type=str, help='destination directory')
+    parser.add_argument('pexels_key', type=str, help='pexels API key')
+    parser.add_argument('pixabay_key', type=str, help='pixabay API key')
+
     args = parser.parse_args()
-    si=SearchImages(pexels_API_KEY, pixabay_API_KEY, logging);
+    si=SearchImages(args.pexels_key or "", args.pixabay_key or "", logging);
     si.search_images_google(args.query, args.num_images, args.destination_dir)
     si.search_images_bing(args.query, args.num_images, args.destination_dir)
     si.search_images_pexels(args.query, args.num_images, args.destination_dir)
