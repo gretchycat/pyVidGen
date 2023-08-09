@@ -198,7 +198,6 @@ class VidMaker:
         if not context:
             context=[]
         context_items=len(context)
-        print(context_items)
         for e in md:
             tp=e['type']
             ch=e.get("children")
@@ -247,17 +246,20 @@ class VidMaker:
         context.append('list')
 
     def generate_md_text(self, xml, md, context):
-        #TODO Video capable media+TTS
-        #heading: Video capable media+text overlay -- Title style+TTS
-        #list Video capable media+text overlay -- calculate position, TTS
-        #strong Video capable media+text overlay -- calculate position, TTS
+        #TODO     Video capable media, TTS
+        #heading: add text overlay -- Title style
+        #list:    add text overlay -- calculate position in a list style, keep text for duration of list
+        #strong:  add text overlay -- calculate position keep for duration of text after the bold
         text=md.get('raw')
         if(text):
             #TODO handle contexts
-            print(", ".join(context))
-            print("*"*8)
+            if len(context)>0:
+                print(", ".join(context))
+                print("*"*8)
             print(text)
             print('-'*80)
+        else:
+            logging,warning('Missing "raw" text')#TODO get a better warning
         if len(context)>0:
             context.pop()
         pass
