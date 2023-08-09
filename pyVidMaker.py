@@ -225,10 +225,6 @@ class VidMaker:
                 pass
             else:
                 logging.warning(f'Unhandled md data: {tp}')
-
-            if tp!='blank_line':
-                #print('\t'*level+f'{tp}') 
-                pass
             if ch: 
                 self.handle_md_children(xml, ch, context, level+1)
         while len(context)>context_items:
@@ -237,14 +233,11 @@ class VidMaker:
 
     def generate_md_heading(self, xml, md, context):
         context.append('heading')
-        #TODO Video capable media+text overlay -- Title style+TTS
-        pass
 
     def generate_md_list(self, xml, md, context):
         pass
 
     def generate_md_paragraph(self, xml, md, context):
-        #TODO Video capable media+TTS
         pass
 
     def generate_md_blank_line(self, xml, md, context):
@@ -252,11 +245,12 @@ class VidMaker:
 
     def generate_md_list_item(self, xml, md, context):
         context.append('list')
-        #TODO Video capable media+text overlay -- calculate position, TTS
-        pass
 
     def generate_md_text(self, xml, md, context):
         #TODO Video capable media+TTS
+        #heading: Video capable media+text overlay -- Title style+TTS
+        #list Video capable media+text overlay -- calculate position, TTS
+        #strong Video capable media+text overlay -- calculate position, TTS
         text=md.get('raw')
         if(text):
             #TODO handle contexts
@@ -270,8 +264,6 @@ class VidMaker:
 
     def generate_md_strong(self, xml, md, context=[]):
         context.append('strong')
-        #TODO Video capable media+text overlay -- calculate position, TTS
-        pass
 
     def parse_md_video_script(self, filename):
         #TODO need to make a custom md parser and xml output 
