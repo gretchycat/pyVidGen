@@ -268,7 +268,6 @@ class VidMaker:
         context.append('strong')
 
     def parse_md_video_script(self, filename):
-        #TODO need to make a custom md parser and xml output 
         file=None
         try:
             file=open(filename,"r")
@@ -280,7 +279,6 @@ class VidMaker:
         md=self.markdown(filetext)
         xml=None #TODO generate header
         self.handle_md_children(xml, md)
-        #pprint(md)
 
     def parse_xml_video_script(self, filename):
         tree = ET.parse(filename)
