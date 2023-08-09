@@ -194,6 +194,72 @@ class VidMaker:
                     return True
         return False
 
+    def handle_md_children(self, xml, md, level=0):
+        for e in md:
+            tp=e['type']
+            ch=e.get("children")
+            if tp=="heading":
+                self.generate_md_heading(xml, e)
+                pass
+            elif tp=="list":
+                self.generate_md_list(xml, e)
+                pass
+            elif tp=="list_item":
+                self.generate_md_list_item(xml, e)
+                pass
+            elif tp=="paragraph":
+                self.generate_md_paragraph(xml, e)
+                pass
+            elif tp=="blank_line":
+                self.generate_md_blank_line(xml, e)
+                pass
+            elif tp=="text":
+                self.generate_md_text(xml, e)
+                pass
+            elif tp=="strong":
+                self.generate_md_strong(xml, e)
+                pass
+            else:
+                logging.warning(f'Unhandled md data: {tp}')
+
+            if tp!='blank_line':
+                #print('\t'*level+f'{tp}') 
+                pass
+            if ch: 
+                self.handle_md_children(xml, ch, level+1)
+ 
+        pass
+
+    def generate_md_heading(self, xml, md):
+        #TODO Video capable media+text overlayi -- Title style+TTS
+        pass
+
+    def generate_md_list(self, xml, md):
+        pass
+
+    def generate_md_paragraph(self, xml, md):
+        #TODO Video capable media+TTS
+        pass
+
+    def generate_md_blank_line(self, xml, md):
+        pass
+
+    def generate_md_list_item(self, xml, md):
+        #TODO Video capable media+text overlay -- calculate position, TTS
+        pass
+
+    def generate_md_text(self, xml, md):
+        text=md.get('raw')
+        if(text):
+            print(text)
+            print('-'*80)
+        #TODO Video capable media+TTS
+        pass
+
+    def generate_md_strong(self, xml, md):
+        #TODO Video capable media+text overlay -- calculate position, TTS
+        pass
+
     def parse_md_video_script(self, filename):
         #TODO need to make a custom md parser and xml output 
         file=None
@@ -203,10 +269,11 @@ class VidMaker:
             logging.error(f"cannot open markdown: {filename}")
             return
         filetext='\n'.join(file.readlines())
+        logging.info(f"Processing md script")
         md=self.markdown(filetext)
-        pprint(md)
-        logging.warning(f"md script!")
-        pass
+        xml=None #TODO generate header
+        self.handle_md_children(xml, md)
+        #pprint(md)
 
     def parse_xml_video_script(self, filename):
         tree = ET.parse(filename)
