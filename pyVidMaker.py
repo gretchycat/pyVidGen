@@ -198,6 +198,7 @@ class VidMaker:
         if not context:
             context=[]
         context_items=len(context)
+        print(context_items)
         for e in md:
             tp=e['type']
             ch=e.get("children")
@@ -234,36 +235,40 @@ class VidMaker:
             context.pop()
         pass
 
-    def generate_md_heading(self, xml, md, context=[]):#add Contexts
+    def generate_md_heading(self, xml, md, context):
         context.append('heading')
-        #TODO Video capable media+text overlayi -- Title style+TTS
+        #TODO Video capable media+text overlay -- Title style+TTS
         pass
 
-    def generate_md_list(self, xml, md, context=[]):
+    def generate_md_list(self, xml, md, context):
         pass
 
-    def generate_md_paragraph(self, xml, md, context=[]):
+    def generate_md_paragraph(self, xml, md, context):
         #TODO Video capable media+TTS
         pass
 
-    def generate_md_blank_line(self, xml, md, context=[]):
+    def generate_md_blank_line(self, xml, md, context):
         pass
 
-    def generate_md_list_item(self, xml, md, context=[]): #add Contexts:
+    def generate_md_list_item(self, xml, md, context):
         context.append('list')
         #TODO Video capable media+text overlay -- calculate position, TTS
         pass
 
-    def generate_md_text(self, xml, md, context=[]):
+    def generate_md_text(self, xml, md, context):
         #TODO Video capable media+TTS
         text=md.get('raw')
         if(text):
+            #TODO handle contexts
             print(", ".join(context))
+            print("*"*8)
             print(text)
             print('-'*80)
+        if len(context)>0:
+            context.pop()
         pass
 
-    def generate_md_strong(self, xml, md, context=[]):#Add Contexts
+    def generate_md_strong(self, xml, md, context=[]):
         context.append('strong')
         #TODO Video capable media+text overlay -- calculate position, TTS
         pass
