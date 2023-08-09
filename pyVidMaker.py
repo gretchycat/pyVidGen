@@ -12,7 +12,7 @@ from SearchImages import SearchImages
 pexels_API_KEY = "JMdcZ8E4lrykP2QSaZHNxuXKlJRRjmmlvBQRvgu5CrHnSI30BF7mGLI7"
 pixabay_API_KEY = "38036450-c3aaf7be223f4d01b66e68cae"
 
-class VidMaker:#TODO move functions to this class
+class VidMaker:
     def __init__(self, script_file):
         self.script_file=script_file
         basefn,self.ext= os.path.splitext(script_file)
@@ -662,6 +662,7 @@ class VidMaker:#TODO move functions to this class
         self.add_missing_streams(clip['ClipFileName'])
 
     def generate_srt(self, clips, filename):
+        #FIXME times are wrong
         """
         Creates a subtitle track for the video based on the durations of the clips
         and saves it to the output file.
@@ -772,6 +773,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
 
