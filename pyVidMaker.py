@@ -194,30 +194,33 @@ class VidMaker:
                     return True
         return False
 
-    def handle_md_children(self, xml, md, level=0):
+    def handle_md_children(self, xml, md, context=None, level=0):
+        if not context:
+            context=[]
+        context_items=len(context)
         for e in md:
             tp=e['type']
             ch=e.get("children")
             if tp=="heading":
-                self.generate_md_heading(xml, e)
+                self.generate_md_heading(xml, e, context)
                 pass
             elif tp=="list":
-                self.generate_md_list(xml, e)
+                self.generate_md_list(xml, e, context)
                 pass
             elif tp=="list_item":
-                self.generate_md_list_item(xml, e)
+                self.generate_md_list_item(xml, e, context)
                 pass
             elif tp=="paragraph":
-                self.generate_md_paragraph(xml, e)
+                self.generate_md_paragraph(xml, e, context)
                 pass
             elif tp=="blank_line":
-                self.generate_md_blank_line(xml, e)
+                self.generate_md_blank_line(xml, e, context)
                 pass
             elif tp=="text":
-                self.generate_md_text(xml, e)
+                self.generate_md_text(xml, e, context)
                 pass
             elif tp=="strong":
-                self.generate_md_strong(xml, e)
+                self.generate_md_strong(xml, e, context)
                 pass
             else:
                 logging.warning(f'Unhandled md data: {tp}')
@@ -226,37 +229,42 @@ class VidMaker:
                 #print('\t'*level+f'{tp}') 
                 pass
             if ch: 
-                self.handle_md_children(xml, ch, level+1)
- 
+                self.handle_md_children(xml, ch, context, level+1)
+        while len(context)>context_items:
+            context.pop()
         pass
 
-    def generate_md_heading(self, xml, md):
+    def generate_md_heading(self, xml, md, context=[]):#add Contexts
+        context.append('heading')
         #TODO Video capable media+text overlayi -- Title style+TTS
         pass
 
-    def generate_md_list(self, xml, md):
+    def generate_md_list(self, xml, md, context=[]):
         pass
 
-    def generate_md_paragraph(self, xml, md):
+    def generate_md_paragraph(self, xml, md, context=[]):
         #TODO Video capable media+TTS
         pass
 
-    def generate_md_blank_line(self, xml, md):
+    def generate_md_blank_line(self, xml, md, context=[]):
         pass
 
-    def generate_md_list_item(self, xml, md):
+    def generate_md_list_item(self, xml, md, context=[]): #add Contexts:
+        context.append('list')
         #TODO Video capable media+text overlay -- calculate position, TTS
         pass
 
-    def generate_md_text(self, xml, md):
+    def generate_md_text(self, xml, md, context=[]):
+        #TODO Video capable media+TTS
         text=md.get('raw')
         if(text):
+            print(", ".join(context))
             print(text)
             print('-'*80)
-        #TODO Video capable media+TTS
         pass
 
-    def generate_md_strong(self, xml, md):
+    def generate_md_strong(self, xml, md, context=[]):#Add Contexts
+        context.append('strong')
         #TODO Video capable media+text overlay -- calculate position, TTS
         pass
 
