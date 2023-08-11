@@ -1,6 +1,7 @@
 #!/usr/bin/python3
-import os, hashlib, subprocess, logging, colorlog, datetime, glob, shutil
+import os, hashlib, subprocess, logging, colorlog, datetime, glob, shutil, io
 import requests, json, mistune, urllib.parse, xml.etree.ElementTree as ET
+import string, xml.dom.minidom as minidom
 from bs4 import BeautifulSoup
 from pprint import pprint
 from optparse import OptionParser
@@ -8,6 +9,15 @@ from gtts import gTTS
 from imageSelect import imageSelect
 from urllib.parse import quote_plus
 from SearchImages import SearchImages
+
+import nltk
+from nltk import pos_tag, word_tokenize
+from nltk.corpus import stopwords
+
+# Download necessary NLTK resources (only needed once)
+nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')
+nltk.download('stopwords')
 
 pexels_API_KEY = "JMdcZ8E4lrykP2QSaZHNxuXKlJRRjmmlvBQRvgu5CrHnSI30BF7mGLI7"
 pixabay_API_KEY = "38036450-c3aaf7be223f4d01b66e68cae"
@@ -53,6 +63,39 @@ class VidMaker:
         # Configure the root logger with the handlers
         logging.root.handlers = [file_handler, stderr_handler]
         logging.root.setLevel(logging.DEBUG)
+
+    def filter_text(self, text):
+        # Tokenize the text
+        tokens = word_tokenize(text)
+
+        # Perform part-of-speech tagging
+        pos_tags = pos_tag(tokens)
+
+        # Filter out nouns, verbs, and adjectives
+        allowed_tags = ['NN', 'NNS', 'NNP', 'NNPS']
+        #allowed_tags = ['NN', 'NNS', 'NNP', 'NNPS', 'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ', 'JJ', 'JJR', 'JJS']
+        filtered_words = [word for word, tag in pos_tags if tag in allowed_tags]
+
+        # Eliminate duplicates
+        filtered_words = list(set(filtered_words))
+
+        return filtered_words
+
+    def pct_to_float(self, percentage_str):
+        if "%" in percentage_str:
+            # Remove "%" sign and convert to float
+            value = float(percentage_str.replace("%", ""))
+        else:
+            # Convert string to float
+            value = float(percentage_str)
+
+        if value >= 0 and value <= 1:
+            return value
+        elif value >= 5 and value <= 100:
+            return value / 100
+        else:
+            raise ValueError("Percentage value is outside the valid range")
+
 
     def translate_color(self, color):
         if len(color) == 4 and color.startswith("#"):  # Handle 3-character color code
@@ -101,7 +144,7 @@ class VidMaker:
         self.si.search_images_pexels(search_query, num_images, output_directory)
         #self.si.search_images_google(search_query, num_images, output_directory)
         #self.si.search_images_bing(search_query, num_images, output_directory)
-        sekf.si.search_images_pixabay(search_query, num_images, output_directory)
+        self.si.search_images_pixabay(search_query, num_images, output_directory)
 
     def generate_tts_audio_buffer(self, audio_buffer_file, text_content):
         """
@@ -121,7 +164,7 @@ class VidMaker:
             return os.path.isfile(file_path)
         return False
 
-    def get_missing_file(self, type, file_path, description, script, si):
+    def get_missing_file(self, type, file_path, description, script):
         if file_path:
             log=logging.info
             verb="Acquiring"
@@ -132,7 +175,7 @@ class VidMaker:
             elif type=="Image":
                 verb="Found"
                 shutil.rmtree('image_temp', ignore_errors=True)
-                self,search_images(description, 20, 'image_temp', si)
+                self.search_images(description, 20, 'image_temp')
                 imgs=imageSelect()
                 imgs.interface(file_path, glob.glob('image_temp/*'), description)
                 shutil.rmtree('image_temp', ignore_errors=True)
@@ -146,7 +189,12 @@ class VidMaker:
 
     def generate_temp_filename(self, fnkey=None):
         if(fnkey):
-            return "temp_"+hashlib.md5(fnkey).hexdigest()    
+            translation_table = str.maketrans('', '', string.punctuation + string.whitespace)
+            fnkey = fnkey.translate(translation_table).replace(' ', '_') 
+            if(len(fnkey)<32):
+                return f"temp_{fnkey}"
+            else:
+                return "temp_"+hashlib.md5(fnkey.encode('utf-8')).hexdigest()    
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
         return f"temp_{timestamp}"
 
@@ -246,18 +294,53 @@ class VidMaker:
         context.append('list')
 
     def generate_md_text(self, xml, md, context):
-        #TODO     Video capable media, TTS
+        clip=ET.SubElement(xml, 'Clip')
+        properties=ET.SubElement(clip, 'Properties')
+        #TODO     create clip with media:
+        #normal:  Video capable media, TTS
         #heading: add text overlay -- Title style
         #list:    add text overlay -- calculate position in a list style, keep text for duration of list
         #strong:  add text overlay -- calculate position keep for duration of text after the bold
         text=md.get('raw')
+        tts_media=ET.SubElement(clip, 'Media')
+        tts_media.set("type", "TTS")
+        img_media=ET.SubElement(clip, 'Media')
+        img_media.set('type', 'Image')
         if(text):
+            #if len(context)>0:
+            #    print(", ".join(context))
+            #    print("*"*8)
+            #print(text)
+            ttsdelay=1.0
+            #print('-'*80)
+            ET.SubElement(img_media, 'Description').text=f'{" ".join(self.filter_text(text))}'
+            ET.SubElement(img_media, 'FilePath').text=f'{self.generate_temp_filename(text)}.png'
+            ET.SubElement(img_media, 'StartTime').text=f'0.0'
+            ET.SubElement(img_media, 'Duration').text=f'-1'
+            ET.SubElement(img_media, 'Position').text=f'Aspect'
+            filters=ET.SubElement(img_media, 'filters')
+            if('list' in context or 'strong' in context or 'heading' in context):
+                ttsdelay=3.0
+                drawtext=ET.SubElement(filters, 'filter')
+                drawtext.set('type', 'drawtext')
+                ET.SubElement(drawtext, 'Text').text=f"{text}"
+                ET.SubElement(drawtext, 'StartTime').text=f'0'
+                ET.SubElement(drawtext, 'Duration').text=f'-1'
+                ET.SubElement(drawtext, 'FontSize').text=f'48'
+                ET.SubElement(drawtext, 'FontColor').text=f'#FFF'
+                ET.SubElement(drawtext, 'FontFile').text=f'font.ttf'
+                ET.SubElement(drawtext, 'BorderColor').text=f'#000'
+                ET.SubElement(drawtext, 'BorderWidth').text=f'5'
+            ET.SubElement(tts_media, 'Script').text=f'{text}'
+            ET.SubElement(tts_media, 'FilePath').text=f'{self.generate_temp_filename(text)}.wav'
+            ET.SubElement(tts_media, 'StartTime').text=f'{ttsdelay}'
+            ET.SubElement(tts_media, 'Duration').text=f'-1'
+            ET.SubElement(tts_media, 'UseForCC').text=f'True'
+            ET.SubElement(tts_media, 'Volume').text=f'100%'
+
+
+            #TODO add drawtext filter for contexts
             #TODO handle contexts
-            if len(context)>0:
-                print(", ".join(context))
-                print("*"*8)
-            print(text)
-            print('-'*80)
         else:
             logging,warning('Missing "raw" text')#TODO get a better warning
         if len(context)>0:
@@ -277,8 +360,29 @@ class VidMaker:
         filetext='\n'.join(file.readlines())
         logging.info(f"Processing md script")
         md=self.markdown(filetext)
-        xml=None #TODO generate header
-        self.handle_md_children(xml, md)
+        xml=ET.Element('VideoScript')
+        ET.SubElement(xml, 'Version').text='1'
+        info=ET.SubElement(xml, 'Info')
+        ET.SubElement(info, 'Title')
+        ET.SubElement(info, 'SubTitle')
+        ET.SubElement(info, 'Genre')
+        ET.SubElement(info, 'Author')
+        ET.SubElement(info, 'Description')
+        ET.SubElement(info, 'Date')
+        ET.SubElement(info, 'Time')
+        defaults=ET.SubElement(xml, 'Defaults')
+        ET.SubElement(defaults, 'BackgroundColor').text='#000'
+        ET.SubElement(defaults, 'BackgroundMusic').text='bgm.mp3'
+        ET.SubElement(defaults, 'LoopBGM').text='true'
+        ET.SubElement(defaults, 'BackgroundVolume').text='5%'
+        ET.SubElement(defaults, 'TranstionType').text='fade'
+        ET.SubElement(defaults, 'TransitionTime').text='0.5'
+        ET.SubElement(defaults, 'Resolution').text='1920x1080'
+        clips=ET.SubElement(xml, 'Clips')
+        self.handle_md_children(clips, md)
+        xml_str=ET.tostring(xml, encoding='utf-8')
+        with open(f'{os.path.splitext(filename)[0]}.xml', 'w') as xml_file:
+            xml_file.write(minidom.parseString(xml_str).toprettyxml(indent='    '))
 
     def parse_xml_video_script(self, filename):
         tree = ET.parse(filename)
@@ -432,7 +536,7 @@ class VidMaker:
             fill=None
         return { "x":int(x), "y":int(y), "width":int(w), "height":int(h), "rotation":rot, 'fill':fill, 'pos':pos_type }
 
-    def check_missing_media(self, clips, si):
+    def check_missing_media(self, clips):
         """ also check for background audio file from global, chapter, clip """
         missing=0
         for clip in clips:
@@ -451,9 +555,9 @@ class VidMaker:
                 if media_type:
                     # Process missing media
                     if not self.file_exists(file_path):
-                        missing+=self.get_missing_file(media_type, file_path, description, script, si)
+                        missing+=self.get_missing_file(media_type, file_path, description, script)
                     if not self.file_exists(buffer_file):
-                        missing+=self.get_missing_file(media_type, buffer_file, description, script, si)
+                        missing+=self.get_missing_file(media_type, buffer_file, description, script)
             clip['Script']=full_script
         self.fix_durations(clips)
         return missing
@@ -610,17 +714,17 @@ class VidMaker:
                     output=f"v{v_output_num}"
                     graph.append(f"[{str(inputs['v'].pop())}]"\
                             f"{f.get('type')}="\
-                            f"text={f.get('Text') or 'Lorem Ipsum'}:"\
+                            f"text={(f.get('Text') or 'Lorem Ipsum').replace(':', '')}:"\
                             f"fontsize={f.get('FontSize') or 24}:"\
                             f"fontfile={f.get('FontFile') or 'Arial'}:"\
                             f"borderw={f.get('BorderWidth') or 1}:"\
-                            f"fontcolor={translate_color(f.get('FontColor'))}:"\
+                            f"fontcolor={self.translate_color(f.get('FontColor'))}:"\
                             f"x={f.get('X') or 0}:"\
                             f"y={f.get('Y') or 0}:"\
                             #f"t={f.get('StartTime') or 0}:"\
                             #f"duration={f.get('Duration') or media['Duration']}:"\
                             f"alpha={f.get('Alpha') or 1.0}:"\
-                            f"bordercolor={translate_color(f.get('BorderColor'))}"\
+                            f"bordercolor={self.translate_color(f.get('BorderColor'))}"\
                             f"[{output}]")
                     inputs['v'].append(output)
                     v_output_num+=1
@@ -646,7 +750,7 @@ class VidMaker:
             nonlocal a_output_num
             
             #volume filter
-            volume=float(media.get('Volume') or 100.0)/100.0
+            volume=float(self.pct_to_float(media.get('Volume') or 100.0))
             output=f"a{a_output_num}"
             graph.append(f"[{str(inputs['a'].pop())}]"\
                     f"volume={volume}"\
@@ -813,12 +917,12 @@ class VidMaker:
         self.execute_command(command)
     
     def create(self):
-        si=SearchImages(pexels_API_KEY, pixabay_API_KEY, logging)
+        self.si=SearchImages(pexels_API_KEY, pixabay_API_KEY, logging)
         if self.ext.lower()==".md":
             xml_file = self.parse_md_video_script(f"{self.script_file}")
         elif self.ext.lower()=='.xml':
             clips, defaults = self.parse_xml_video_script(f"{self.script_file}")
-            missing=self.check_missing_media(clips, si)
+            missing=self.check_missing_media(clips)
             if(missing):
                 logging.error(f'There are {missing} missing media files.')
             else:
