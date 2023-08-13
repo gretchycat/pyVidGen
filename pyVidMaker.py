@@ -29,13 +29,13 @@ class VidMaker:
         # Output video file
         self.output_file =basefn+".mp4"
         # Log file
-        log_file = basefn+".log"
+        self.log_file = basefn+".log"
         # Set up logging
         self.sub_file = basefn+".srt"
-        self.setup_logging(log_file)
+        self.setup_logging()
         self.markdown=mistune.create_markdown(renderer=None)
 
-    def setup_logging(self, log_file):
+    def setup_logging(self):
         """ Create a formatter with color """
         stderr_formatter = colorlog.ColoredFormatter(
             '%(log_color)s%(levelname)s:%(reset)s%(message)s',
@@ -52,7 +52,7 @@ class VidMaker:
         )
 
         # Create a file handler for the log file
-        file_handler = logging.FileHandler(log_file)
+        file_handler = logging.FileHandler(self.log_file)
         file_handler.setFormatter(log_formatter)
 
         # Create a stream handler for stderr
@@ -95,7 +95,6 @@ class VidMaker:
             return value / 100
         else:
             raise ValueError("Percentage value is outside the valid range")
-
 
     def translate_color(self, color):
         if len(color) == 4 and color.startswith("#"):  # Handle 3-character color code
@@ -174,11 +173,22 @@ class VidMaker:
                 self.generate_tts_audio_buffer(file_path, script)
             elif type=="Image":
                 verb="Found"
-                shutil.rmtree('image_temp', ignore_errors=True)
-                self.search_images(description, 20, 'image_temp')
-                imgs=imageSelect()
-                imgs.interface(file_path, glob.glob('image_temp/*'), description)
-                shutil.rmtree('image_temp', ignore_errors=True)
+                while not self.file_exists(file_path):
+                    shutil.rmtree('image_temp', ignore_errors=True)
+                    self.search_images(description, 20, 'image_temp')
+                    #reset logging
+                    for handler in logging.root.handlers[:]:
+                        logging.root.removeHandler(handler)
+                    imgs=imageSelect()
+                    #imgs.interface(file_path, glob.glob('image_temp/*'), description)
+                    self.setup_logging()
+                    #shutil.rmtree('image_temp', ignore_errors=True)
+                    if not self.file_exists(file_path):
+                        print(f'\x1b[0;44;1m\x1b[0KNo image was chosen. Please enter new search terms.\x1b[0m')
+                        print(f'\x1b[0;1;97mScript: \x1b[0;44;93m"{script}"\x1b[0m')
+                        desc=input(f'[\x1b[0;1m{description}\x1b[0m]: ')
+                        if(desc!=''):
+                            description=desc
             missing=0 if self.file_exists(file_path) else 1
             if missing>0:
                 verb="Missing"
@@ -877,6 +887,7 @@ class VidMaker:
                 -map "[vv]" -map "[am]" -y -t 60 
                 -c:v h264 -c:a aac -pix_fmt yuv420p domestication.mp4
         """
+        #enforce a maximum stream count for the join
         command = ['ffmpeg']
         stream=0
         filter_graph_vid=""

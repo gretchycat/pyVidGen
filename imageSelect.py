@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import io, os,sys,termios,tty, subprocess, base64
+import io, os,sys,termios,tty, subprocess, base64, sixel
 from optparse import OptionParser
 from icat import ICat 
 from PIL import Image
@@ -173,61 +173,79 @@ class imageSelect:
     def __init__(self):
         pass
 
-    def split_md5_string(iself, encoded_data): # Split encoded data into 4096 byte chunks
-        chunk_size = 4
-        num_chunks = (len(encoded_data) + chunk_size - 1) // chunk_size
-        chunks = [encoded_data[i*chunk_size:(i+1)*chunk_size] for i in range(num_chunks)]
-        return chunks
-
     def showImage(self, image, x=0, y=0, w=30, h=15, showInfo=False):
+        def write_chunked(data, items):
+            def serialize_gr_command(payload, items):
+                cmd = ','.join(f'{k}={v}' for k, v in items.items())
+                ans = []
+                w = ans.append
+                w('\x1b_G'), w(cmd)
+                if payload:
+                    w(';')
+                    w(payload)
+                w('\x1b\\')
+                return ''.join(ans)
+            out=''
+            base64=standard_b64encode(data).decode('ascii')
+            while base64:
+                chunk, base64 = base64[:4096], base64[4096:]
+                m = 1 if base64 else 0
+                items['m']=m
+                out+=(serialize_gr_command(chunk, items ))
+                items.clear()
+            return out
+
+        def get_terminal_size():
+            import array, fcntl, sys, termios
+            buf = array.array('H', [0, 0, 0, 0])
+            fcntl.ioctl(sys.stdout, termios.TIOCGWINSZ, buf)
+            return {
+                        "rows": buf[0],
+                        "columns": buf[1],
+                        "width": buf[2],
+                        "height": buf[3]
+                    }
+
         desc=""
         if(showInfo):
             img = Image.open(image)
             imgX,imgY=img.size
+            imgAR=imgY/imgX
             img.close()
             filename=os.path.basename(image)
             desc=f'({imgX}x{imgY}) {filename}'[:w]
             descX=int(x+(w/2)-(len(desc)/2))+1
             descY=int(y+h)-1
             desc=f'\x1b[s\x1b[48;5;245;30m\x1b[{descY};{descX}H{desc}\n'
-        if 'kitty not working yet' in os.environ.get('TERM', ''):
-            start_pos = f'\x1b[{y};{x}H'
-            image_size = f'\x1b[8;{h};{w}t'
-            start_image= f'\x1b_Ga=T;f=100;t=d;c={x};r={y};s={w};v={h};'
-            continue_image= f'\x1b_G'
-            end_image='\x1b\\'
+        start_pos = f'\x1b[{y};{x+1}H'
+        has_kitty, has_sixel= 'kitty' in os.environ.get('TERM', ''), True
+        if has_kitty or has_sixel:
+            size=get_terminal_size()
             img = Image.open(image)
-            max_size=1024
             # Calculate the scaling factor while preserving the aspect ratio
-            width, height = img.size
-            if width > max_size or height > max_size:
-                aspect_ratio = width / height
-                if width > height:
-                    new_width = max_size
-                    new_height = int(new_width / aspect_ratio)
-                else:
-                    new_height = max_size
-                    new_width = int(new_height * aspect_ratio)
-                # Resize the image
-                img = img.resize((new_width, new_height), Image.LANCZOS)
+            cell_w=size['width']/size['columns']
+            cell_h=size['height']/size['rows']
+            newW=cell_h*w/imgAR
+            newH=cell_w*h*imgAR
+            if newH>h*cell_h:
+                newH=h*cell_h
+            if newW>w*cell_w:
+                newW=w*cell_w
+            # Resize the image
+            img = img.resize((int(newW), int(newH)), Image.LANCZOS)
             # Generate a PNG stream
             png_stream = io.BytesIO()
             img.save(png_stream, format='PNG')
             png_stream.seek(0)
-            #base64_image=write_chunked(a='T', f=100, data=png_stream.read())
-            base64_image = str(standard_b64encode(png_stream.getvalue()))
+            if has_kitty:
+                items={"a": "T", "f":100}
+                out=f'{start_pos}{write_chunked(png_stream.getvalue(), items)}'
+            if has_sixel:
+                #sxi=sixel.SixelImage.from_pil_image(img)
+                #out=f'{start_pos}{image_size}{sxi.get_sixel_string()}'
+                pass
             png_stream.close()
-            payloads=self.split_md5_string(base64_image)
-            first=True
-            out=""
-            for i, payload in enumerate(payloads):
-                m_key = "1" if i < len(payloads) - 1 else "0"
-                if first:
-                    out+=f'{start_pos}{image_size}{start_image}m={m_key};{payload}{end_image}'
-                    first=False
-                else:
-                    out+=f'{continue_image}m={m_key};{payload}{end_image}'
-            return outi+desc
+            return out+desc
         ic=ICat(w=int(w), h=int(h), zoom='aspect', f=True, x=int(x), y=int(y)) 
         return ic.print(image)+desc
 
