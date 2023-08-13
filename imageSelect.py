@@ -174,6 +174,9 @@ class imageSelect:
         pass
 
     def showImage(self, image, x=0, y=0, w=30, h=15, showInfo=False):
+        def clear_kitty_images():
+            pass
+
         def write_chunked(data, items):
             def serialize_gr_command(payload, items):
                 cmd = ','.join(f'{k}={v}' for k, v in items.items())
@@ -197,20 +200,23 @@ class imageSelect:
 
         def get_terminal_size():
             import array, fcntl, sys, termios
+
             buf = array.array('H', [0, 0, 0, 0])
             fcntl.ioctl(sys.stdout, termios.TIOCGWINSZ, buf)
-            return {
-                        "rows": buf[0],
-                        "columns": buf[1],
-                        "width": buf[2],
-                        "height": buf[3]
-                    }
+
+            # Create a dictionary with meaningful keys
+            window_info = {
+                "rows": buf[0],
+                "columns": buf[1],
+                "width": buf[2],
+                "height": buf[3]
+            }
+            return window_info
 
         desc=""
         if(showInfo):
             img = Image.open(image)
             imgX,imgY=img.size
-            imgAR=imgY/imgX
             img.close()
             filename=os.path.basename(image)
             desc=f'({imgX}x{imgY}) {filename}'[:w]
@@ -218,28 +224,30 @@ class imageSelect:
             descY=int(y+h)-1
             desc=f'\x1b[s\x1b[48;5;245;30m\x1b[{descY};{descX}H{desc}\n'
         start_pos = f'\x1b[{y};{x+1}H'
+        image_size = f'\x1b[8;{h};{w}t'
         has_kitty, has_sixel= 'kitty' in os.environ.get('TERM', ''), True
         if has_kitty or has_sixel:
-            size=get_terminal_size()
             img = Image.open(image)
+            img_w, img_h=img.size
+            img_ar=img_h/img_w
+            term_size=get_terminal_size()
+            cell_w=term_size['width']/term_size['columns']
+            cell_h=term_size['height']/term_size['rows']
             # Calculate the scaling factor while preserving the aspect ratio
-            cell_w=size['width']/size['columns']
-            cell_h=size['height']/size['rows']
-            newW=cell_h*w/imgAR
-            newH=cell_w*h*imgAR
-            if newH>h*cell_h:
-                newH=h*cell_h
-            if newW>w*cell_w:
-                newW=w*cell_w
-            # Resize the image
-            img = img.resize((int(newW), int(newH)), Image.LANCZOS)
+            scale=img_w/w
+            scale2=img_h/((h-1)*2)
+            if scale2>scale:
+                scale=scale2
+            new_h=img_h/scale/2
+            new_w=img_w/scale
+            img = img.resize((int(new_w*cell_w), int(new_h*cell_h)), Image.LANCZOS)
             # Generate a PNG stream
             png_stream = io.BytesIO()
             img.save(png_stream, format='PNG')
             png_stream.seek(0)
             if has_kitty:
-                items={"a": "T", "f":100}
-                out=f'{start_pos}{write_chunked(png_stream.getvalue(), items)}'
+                items={"a": "T", "f":100}#, "r":h, "c":w}
+                out=f'{start_pos}{image_size}{write_chunked(png_stream.getvalue(), items)}'
             if has_sixel:
                 #sxi=sixel.SixelImage.from_pil_image(img)
                 #out=f'{start_pos}{image_size}{sxi.get_sixel_string()}'

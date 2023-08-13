@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 import os, hashlib, subprocess, logging, colorlog, datetime, glob, shutil, io
 import requests, json, mistune, urllib.parse, xml.etree.ElementTree as ET
-import string, xml.dom.minidom as minidom
+import string, xml.dom.minidom as minidom, pyte
 from bs4 import BeautifulSoup
 from pprint import pprint
 from optparse import OptionParser
