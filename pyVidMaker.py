@@ -33,6 +33,7 @@ class VidMaker:
         # Set up logging
         self.work_dir = basefn+'.work'
         os.makedirs(self.work_dir, exist_ok=True)
+        os.makedirs('search', exist_ok=True)
         self.sub_file = self.work_dir+'/'+basefn+".srt"
         self.setup_logging()
         self.markdown=mistune.create_markdown(renderer=None)
@@ -191,7 +192,7 @@ class VidMaker:
                     if(desc!=''):
                         description=desc
                     
-                    search_dir=f'search_{desc}'[:24]
+                    search_dir=f'search/{desc.lower()}'[:24]
                     if not self.dir_exists(search_dir):
                         self.search_images(description, 20, search_dir)
                     #reset logging
@@ -212,7 +213,7 @@ class VidMaker:
     def generate_temp_filename(self, fnkey=None):
         if(fnkey):
             translation_table = str.maketrans('', '', string.punctuation + string.whitespace)
-            fnkey = fnkey.translate(translation_table).replace(' ', '_') 
+            fnkey = fnkey.translate(translation_table).replace(' ', '_')[:30] 
             if(len(fnkey)<32):
                 return f"temp_{fnkey}"
             else:
