@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import io, os,sys,termios,tty, subprocess, base64, sixel
+from pprint import pprint
 from optparse import OptionParser
 from icat import ICat 
 from PIL import Image
@@ -171,12 +172,39 @@ class termKeyboard:
 
 class imageSelect:
     def __init__(self):
-        pass
+        self.image_support=[]
+        term=os.environ.get('TERM', '')
+        konsole_ver=os.environ.get('KONSOLE_VERSION', '')
+        if 'kitty' in term:
+            self.image_support.append('kitty')
+        if 'vt340' in term or len(konsole_ver or '')>0:
+            self.image_support.append('sixel')
+
+    def execute_command(self, command):
+        """
+        Executes a command in the system and logs the command line and output.
+        """
+        try:
+            output=""
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+            for line in process.stdout:
+                #logging.debug(line.rstrip('\n'))
+                output+=line
+            process.wait()
+            process.output=output
+            return output
+        except Exception as e:
+            return f"Error :{' '.join(command)}"
+
+    def clear_images(self):
+        out=''
+        if 'kitty' in self.image_support:
+            out+='\x1b_Ga=d\x1b\\'
+        if 'sixel' in self.image_support:
+            pass
+        return out
 
     def showImage(self, image, x=0, y=0, w=30, h=15, showInfo=False):
-        def clear_kitty_images():
-            pass
-
         def write_chunked(data, items):
             def serialize_gr_command(payload, items):
                 cmd = ','.join(f'{k}={v}' for k, v in items.items())
@@ -212,6 +240,20 @@ class imageSelect:
                 "height": buf[3]
             }
             return window_info
+        import subprocess
+
+        def run(command):
+            pprint(' '.join(command))
+            try:
+                # Run the command and capture its output
+                result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
+                # Check if the command was successful
+                if result.returncode == 0:
+                    return result.stdout
+                else:
+                    return result.stderr
+            except Exception as e:
+                return str(e)
 
         desc=""
         if(showInfo):
@@ -225,8 +267,7 @@ class imageSelect:
             desc=f'\x1b[s\x1b[48;5;245;30m\x1b[{descY};{descX}H{desc}\n'
         start_pos = f'\x1b[{y};{x+1}H'
         image_size = f'\x1b[8;{h};{w}t'
-        has_kitty, has_sixel= 'kitty' in os.environ.get('TERM', ''), True
-        if has_kitty or has_sixel:
+        if len(self.image_support)>0:
             img = Image.open(image)
             img_w, img_h=img.size
             img_ar=img_h/img_w
@@ -245,13 +286,20 @@ class imageSelect:
             png_stream = io.BytesIO()
             img.save(png_stream, format='PNG')
             png_stream.seek(0)
-            if has_kitty:
+            out=''
+            if 'kitty' in self.image_support:
                 items={"a": "T", "f":100}#, "r":h, "c":w}
                 out=f'{start_pos}{image_size}{write_chunked(png_stream.getvalue(), items)}'
-            if has_sixel:
-                #sxi=sixel.SixelImage.from_pil_image(img)
-                #out=f'{start_pos}{image_size}{sxi.get_sixel_string()}'
-                pass
+            elif 'sixel' in self.image_support:
+                #sxi=self.execute_command(['img2sixel', '-w', f'{int(new_w*cell_w)}', '-h', f'{int(new_h*cell_h)}', image])
+                #writer = sixel.sixel.SixelWriter()
+                #writer.draw('test.png')
+
+
+                sxi='sixel broken'
+                out=f'{start_pos}{sxi}'
+            else:
+                pprint(self.image_support)
             png_stream.close()
             return out+desc
         ic=ICat(w=int(w), h=int(h), zoom='aspect', f=True, x=int(x), y=int(y)) 
@@ -306,6 +354,7 @@ class imageSelect:
             h=int((int(screenrows)+1-((y0-1)*2)-((rows-1)*ysep))/rows)
             buffer=""
             if refresh:
+                print(self.clear_images(), end='')
                 buffer+=(backBox.draw(1,1, int(screencolumns), int(screenrows)))
                 drawBoxes=True
                 fillBoxes=True
@@ -348,6 +397,7 @@ class imageSelect:
                     drawBoxes=True
             if key=="Enter":
                 if selected<len(images):
+                    print(self.clear_images(), end='')
                     print(self.showImage(images[selected],\
                         w=int(screencolumns),\
                         h=int(screenrows))+'-'*(int(screencolumns)))
@@ -362,6 +412,7 @@ class imageSelect:
                     refresh=True
 
             if key=='q' or key=='Esc' or key=='Q' or key=='Backspace':
+                print(self.clear_images(), end='')
                 print("\x1b[2J",end='')
                 break
             while(selected<(x+((page-1))*cols)):

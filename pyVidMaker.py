@@ -31,7 +31,9 @@ class VidMaker:
         # Log file
         self.log_file = basefn+".log"
         # Set up logging
-        self.sub_file = basefn+".srt"
+        self.work_dir = basefn+'.work'
+        os.makedirs(self.work_dir, exist_ok=True)
+        self.sub_file = self.work_dir+'/'+basefn+".srt"
         self.setup_logging()
         self.markdown=mistune.create_markdown(renderer=None)
 
@@ -154,6 +156,15 @@ class VidMaker:
             tts = gTTS(text=text_content)
             tts.save(audio_buffer_file)
 
+    def dir_exists(self, file_path):
+        """
+        Checks if a file exists at the given file path.
+        Returns True if it exists, False otherwise.
+        """
+        if file_path is not None:
+            return os.path.isdir(file_path)
+        return False
+
     def file_exists(self, file_path):
         """
         Checks if a file exists at the given file path.
@@ -174,21 +185,22 @@ class VidMaker:
             elif type=="Image":
                 verb="Found"
                 while not self.file_exists(file_path):
-                    shutil.rmtree('image_temp', ignore_errors=True)
-                    self.search_images(description, 20, 'image_temp')
+                    print(f'\x1b[2J\x1b[1;1H\x1b[0;44;1m\x1b[0KPlease enter new search terms.\x1b[0m')
+                    print(f'\x1b[0;1;97mScript: \x1b[0;44;93m"{script}"\x1b[0m')
+                    desc=input(f'[\x1b[0;1m{description}\x1b[0m]\n: ')
+                    if(desc!=''):
+                        description=desc
+                    
+                    search_dir=f'search_{desc}'[:24]
+                    if not self.dir_exists(search_dir):
+                        self.search_images(description, 20, search_dir)
                     #reset logging
                     for handler in logging.root.handlers[:]:
                         logging.root.removeHandler(handler)
                     imgs=imageSelect()
-                    #imgs.interface(file_path, glob.glob('image_temp/*'), description)
+                    imgs.interface(file_path, glob.glob(f'{search_dir}/*'), description[:40])
                     self.setup_logging()
                     #shutil.rmtree('image_temp', ignore_errors=True)
-                    if not self.file_exists(file_path):
-                        print(f'\x1b[0;44;1m\x1b[0KNo image was chosen. Please enter new search terms.\x1b[0m')
-                        print(f'\x1b[0;1;97mScript: \x1b[0;44;93m"{script}"\x1b[0m')
-                        desc=input(f'[\x1b[0;1m{description}\x1b[0m]: ')
-                        if(desc!=''):
-                            description=desc
             missing=0 if self.file_exists(file_path) else 1
             if missing>0:
                 verb="Missing"
@@ -323,7 +335,7 @@ class VidMaker:
             #print(text)
             ttsdelay=1.0
             #print('-'*80)
-            ET.SubElement(img_media, 'Description').text=f'{" ".join(self.filter_text(text))}'
+            ET.SubElement(img_media, 'Description').text=text#f'{" ".join(self.filter_text(text))}'
             ET.SubElement(img_media, 'FilePath').text=f'{self.generate_temp_filename(text)}.png'
             ET.SubElement(img_media, 'StartTime').text=f'0.0'
             ET.SubElement(img_media, 'Duration').text=f'-1'
@@ -473,7 +485,7 @@ class VidMaker:
                                 media['Duration']=clipLength-float(media['StartTime'])
                         else:
                             if media.get('FilePath'):
-                                media['Duration']=self.get_file_duration(media['FilePath'])
+                                media['Duration']=self.get_file_duration(self.work_dir+'/'+media['FilePath'])
                                 logging.debug(f'Setting media Duration '+str(media['Duration']))
                                 clipLength=max(float(media['StartTime'])+float(media['Duration']), clipLength)
                     else:
@@ -499,7 +511,7 @@ class VidMaker:
         fill={}
         pos_type=''
         if(media):
-            i_w, i_h=self.get_file_resolution(media.get('FilePath'))
+            i_w, i_h=self.get_file_resolution(self.work_dir+'/'+media.get('FilePath'))
             if i_w>0 and i_h>0:
                 h=o_h
                 w=i_w/i_h*o_h
@@ -564,17 +576,17 @@ class VidMaker:
                 description = media.get("Description")
                 if media_type:
                     # Process missing media
-                    if not self.file_exists(file_path):
-                        missing+=self.get_missing_file(media_type, file_path, description, script)
-                    if not self.file_exists(buffer_file):
-                        missing+=self.get_missing_file(media_type, buffer_file, description, script)
+                    if file_path and not self.file_exists(file_path):
+                        missing+=self.get_missing_file(media_type, self.work_dir+'/'+file_path, description, script)
+                    if buffer_file and not self.file_exists(buffer_file):
+                        missing+=self.get_missing_file(media_type, self.work_dir+'/'+buffer_file, description, script)
             clip['Script']=full_script
         self.fix_durations(clips)
         return missing
 
     def add_missing_streams(self, input_file):
         if self.file_exists(input_file):
-            temp_output_file = 'temp_output.mp4'    
+            temp_output_file = self.work_dir+'/'+'temp_output.mp4'    
             # Run FFprobe to get the stream information
             ffprobe_cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-print_format', 'json', input_file]
             result = self.execute_command(ffprobe_cmd)
@@ -785,9 +797,9 @@ class VidMaker:
             media_type = media['MediaType']
             if media_type == 'Video':
                 command.extend([
-                    "-i", media["FilePath"],
+                    "-i", self.work_dir+'/'+media["FilePath"],
                 ])
-                hasaudio=has_audio(media['FilePath'])
+                hasaudio=has_audio(self.work_dir+'/'+media['FilePath'])
                 stream_num+=1
                 inputs['v'].append(f"{stream_num}:v")
                 if hasaudio:
@@ -802,7 +814,7 @@ class VidMaker:
             elif media_type == 'Image':
                 command.extend([
                     "-loop", "1",
-                    "-i", media["FilePath"],
+                    "-i", self.work_dir+'/'+media["FilePath"],
                 ])
                 stream_num+=1
                 inputs['v'].append(f"{stream_num}:v")
@@ -812,7 +824,7 @@ class VidMaker:
                 filter_graph['v'].append(vid_graph(inputs, media))
             elif media_type in [ 'Audio', "TTS" ]:
                 command.extend([
-                    "-i", media["FilePath"],
+                    "-i", self.work_dir+'/'+media["FilePath"],
                 ])
                 stream_num+=1
                 inputs['a'].append(f"{stream_num}:a")
@@ -842,10 +854,10 @@ class VidMaker:
         command.extend(['-c:v', 'h264',
             '-c:a', 'aac',
             '-t', str(clip['Duration']),
-            clip['ClipFileName']
+            self.work_dir+'/'+clip['ClipFileName']
         ])
         self.execute_command(command)
-        self.add_missing_streams(clip['ClipFileName'])
+        self.add_missing_streams(self.work_dir+'/'+clip['ClipFileName'])
 
     def generate_srt(self, clips, filename):
         #FIXME times are wrong
@@ -894,7 +906,7 @@ class VidMaker:
         filter_graph_aud=""
         time=0.0
         for clip in clips:
-            command.extend(['-i', clip['ClipFileName']])
+            command.extend(['-i', self.work_dir+'/'+clip['ClipFileName']])
             filter_graph_vid+=f'[{stream}:v]'
             filter_graph_aud+=f'[{stream}:a]'
             stream+=1
@@ -908,12 +920,12 @@ class VidMaker:
             music_volume=0.05
             if (loop):
                 command.extend(['-stream_loop', '-1'])
-            command.extend(['-i', background_audio_file])
+            command.extend(['-i', self.work_dir+'/'+background_audio_file])
             filter_graph_aud+=f';[{stream}:a]volume={music_volume}[bgm]'
             filter_graph_aud+=f';[aa][bgm]amix[am]'
             amap='am'
         if sub_file:
-            command.extend(['-i', sub_file])
+            command.extend(['-i', self.work_dir+'/'+sub_file])
         command.extend(['-filter_complex', ';'.join([filter_graph_vid, filter_graph_aud])])
         command.extend(['-map', f'[vv]'])
         command.extend(['-map', f'[{amap}]'])
