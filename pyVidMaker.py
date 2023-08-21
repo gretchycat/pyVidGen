@@ -155,6 +155,7 @@ class VidMaker:
         """
         if not self.file_exists(audio_buffer_file):
             tts = gTTS(text=text_content)
+            #tts.speed=(7.0/8.0)
             tts.save(audio_buffer_file)
 
     def dir_exists(self, file_path):
@@ -244,6 +245,7 @@ class VidMaker:
 
     def get_file_duration(self, file_path):
         json_data=self.get_file_format(file_path)
+
         if json_data:
             duration = float(json_data['format']['duration'])
             return duration
@@ -330,12 +332,7 @@ class VidMaker:
         img_media=ET.SubElement(clip, 'Media')
         img_media.set('type', 'Image')
         if(text):
-            #if len(context)>0:
-            #    print(", ".join(context))
-            #    print("*"*8)
-            #print(text)
-            ttsdelay=1.0
-            #print('-'*80)
+            ttsdelay=0.0
             ET.SubElement(img_media, 'Description').text=text#f'{" ".join(self.filter_text(text))}'
             ET.SubElement(img_media, 'FilePath').text=f'{self.generate_temp_filename(text)}.png'
             ET.SubElement(img_media, 'StartTime').text=f'0.0'
@@ -343,7 +340,7 @@ class VidMaker:
             ET.SubElement(img_media, 'Position').text=f'Aspect'
             filters=ET.SubElement(img_media, 'filters')
             if('list' in context or 'strong' in context or 'heading' in context):
-                ttsdelay=3.0
+                ttsdelay=0.0
                 drawtext=ET.SubElement(filters, 'filter')
                 drawtext.set('type', 'drawtext')
                 ET.SubElement(drawtext, 'Text').text=f"{text}"
@@ -354,6 +351,8 @@ class VidMaker:
                 ET.SubElement(drawtext, 'FontFile').text=f'font.ttf'
                 ET.SubElement(drawtext, 'BorderColor').text=f'#000'
                 ET.SubElement(drawtext, 'BorderWidth').text=f'5'
+                ET.SubElement(drawtext, 'X').text='(w-text_w)/2'
+                ET.SubElement(drawtext, 'Y').text='(h-text_h)/2'
             ET.SubElement(tts_media, 'Script').text=f'{text}'
             ET.SubElement(tts_media, 'FilePath').text=f'{self.generate_temp_filename(text)}.wav'
             ET.SubElement(tts_media, 'StartTime').text=f'{ttsdelay}'
@@ -648,13 +647,13 @@ class VidMaker:
         def vid_graph(inputs, media): 
             graph = []
             nonlocal v_output_num
-            #"""
+            duration=clip['Duration']+0.1
+            fps=25
+ 
             #scale=width:height[v] 
             if media['Position'].get('fill'): 
                 mediastream=str(inputs['v'].pop())
                 inputs['v'].append(mediastream)
-                duration=clip['Duration']+0.1
-                fps=25
                 if media['MediaType'].lower()=='image': 
                     output=f"v{v_output_num}"
                     graph.append(f"[{str(inputs['v'].pop())}]"\
@@ -805,9 +804,6 @@ class VidMaker:
                 inputs['v'].append(f"{stream_num}:v")
                 if hasaudio:
                     inputs['a'].append(f"{stream_num}:a")
-                #print("i"*80)
-                #print(media['FilePath'])
-                #pprint(inputs)
                 filter_graph['v'].append(vid_graph(inputs, media))
                 if hasaudio:
                     filter_graph['a'].append(aud_graph(inputs, media))
@@ -819,9 +815,6 @@ class VidMaker:
                 ])
                 stream_num+=1
                 inputs['v'].append(f"{stream_num}:v")
-                #print("i"*80)
-                #print(media['FilePath'])
-                #pprint(inputs)
                 filter_graph['v'].append(vid_graph(inputs, media))
             elif media_type in [ 'Audio', "TTS" ]:
                 command.extend([
@@ -829,15 +822,10 @@ class VidMaker:
                 ])
                 stream_num+=1
                 inputs['a'].append(f"{stream_num}:a")
-                #print("i"*80)
-                #print(media['FilePath'])
-                #pprint(inputs)
                 filter_graph['a'].append(aud_graph(inputs, media))
             else:
                 # Log a warning for unknown media type
                 logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
-        #pprint(filter_graph)
-
         #generate the full filter graph
         v_s= ";".join(filter_graph['v'])
         a_s= ";".join(filter_graph['a'])
@@ -857,8 +845,9 @@ class VidMaker:
             '-t', str(clip['Duration']),
             self.work_dir+'/'+clip['ClipFileName']
         ])
-        self.execute_command(command)
-        self.add_missing_streams(self.work_dir+'/'+clip['ClipFileName'])
+        if not self.file_exists( self.work_dir+'/'+clip['ClipFileName']):
+            self.execute_command(command)
+            self.add_missing_streams(self.work_dir+'/'+clip['ClipFileName'])
 
     def generate_srt(self, clips, filename):
         #FIXME times are wrong
@@ -906,12 +895,23 @@ class VidMaker:
         filter_graph_vid=""
         filter_graph_aud=""
         time=0.0
-        for clip in clips:
-            command.extend(['-i', self.work_dir+'/'+clip['ClipFileName']])
-            filter_graph_vid+=f'[{stream}:v]'
-            filter_graph_aud+=f'[{stream}:a]'
-            stream+=1
-            time+=clip['Duration']
+        with open(f'{self.work_dir}/clips.list', 'w') as f:
+            for clip in clips:
+                f.write(f"file '{clip['ClipFileName']}'\n")
+            f.close()
+        command.extend(['-f', 'concat'])
+        command.extend(['-i', f'{self.work_dir}/clips.list'])
+        command.extend(['-y'])
+        command.extend(['-c:v', 'copy'])
+        command.extend(['-c:a', 'copy'])
+        command.extend([f'nobgm_{output_file}'])
+        self.execute_command(command)
+        #return
+        command.extend(['-i', 'nobgm_'+output_file])
+        filter_graph_vid+=f'[{stream}:v]'
+        filter_graph_aud+=f'[{stream}:a]'
+        stream+=1
+        time+=self.get_file_duration(f'nobgm_{output_file}')
         amap='aa'
         if(stream>0):#use xfade filter for transitions
             filter_graph_vid+=f'concat=n={stream}:v=1:a=0[vv]'
@@ -932,10 +932,10 @@ class VidMaker:
         command.extend(['-map', f'[{amap}]'])
         command.extend(['-y'])
         command.extend(['-t', f'{time}'])
-        command.extend(['-c:v', 'h264'])
+        command.extend(['-c:v', 'copy'])
         command.extend(['-c:a', 'aac'])
         command.extend(['-pix_fmt', 'yuv420p'])
-        command.append(output_file)
+        command.extend([output_file])
 
         # Execute the command and capture the output
         self.execute_command(command)
