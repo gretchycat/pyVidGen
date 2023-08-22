@@ -340,13 +340,16 @@ class VidMaker:
             ET.SubElement(img_media, 'Position').text=f'Aspect'
             filters=ET.SubElement(img_media, 'filters')
             if('list' in context or 'strong' in context or 'heading' in context):
+                size=48
+                if 'heading' in context:
+                    size=48*3
                 ttsdelay=0.0
                 drawtext=ET.SubElement(filters, 'filter')
                 drawtext.set('type', 'drawtext')
                 ET.SubElement(drawtext, 'Text').text=f"{text}"
                 ET.SubElement(drawtext, 'StartTime').text=f'0'
                 ET.SubElement(drawtext, 'Duration').text=f'-1'
-                ET.SubElement(drawtext, 'FontSize').text=f'48'
+                ET.SubElement(drawtext, 'FontSize').text=f'size'
                 ET.SubElement(drawtext, 'FontColor').text=f'#FFF'
                 ET.SubElement(drawtext, 'FontFile').text=f'font.ttf'
                 ET.SubElement(drawtext, 'BorderColor').text=f'#000'
@@ -906,6 +909,7 @@ class VidMaker:
         command.extend(['-c:a', 'copy'])
         command.extend([f'nobgm_{output_file}'])
         self.execute_command(command)
+        command=['ffmpeg'] 
         #return
         command.extend(['-i', 'nobgm_'+output_file])
         filter_graph_vid+=f'[{stream}:v]'
@@ -926,13 +930,13 @@ class VidMaker:
             filter_graph_aud+=f';[aa][bgm]amix[am]'
             amap='am'
         if sub_file:
-            command.extend(['-i', self.work_dir+'/'+sub_file])
+            command.extend(['-i', sub_file])
         command.extend(['-filter_complex', ';'.join([filter_graph_vid, filter_graph_aud])])
         command.extend(['-map', f'[vv]'])
         command.extend(['-map', f'[{amap}]'])
         command.extend(['-y'])
         command.extend(['-t', f'{time}'])
-        command.extend(['-c:v', 'copy'])
+        command.extend(['-c:v', 'h264'])
         command.extend(['-c:a', 'aac'])
         command.extend(['-pix_fmt', 'yuv420p'])
         command.extend([output_file])
