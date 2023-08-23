@@ -109,11 +109,12 @@ class VidMaker:
             return color  # Return the color code as is if not in the expected format
 
     def format_time(self, seconds):
+        seconds=float(seconds)
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
         seconds = int(seconds % 60)
         milliseconds = int((seconds % 1) * 1000)
-        return "{:02d}:{:02d}:{:02d},{:03d}".format(hours, minutes, seconds, milliseconds)
+        return "{:02d}:{:02d}:{:02d}.{:02d}".format(hours, minutes, seconds, milliseconds)
 
     def execute_command(self, command):
         """
@@ -493,11 +494,19 @@ class VidMaker:
                                 clipLength=max(float(media['StartTime'])+float(media['Duration']), clipLength)
                     else:
                         clipLength=max(float(media['StartTime'])+float(media['Duration']), clipLength)
+                    filters=media.get('filters')
+                    if filters:
+                        for f in filters:
+                            t=float(f.get('StartTime') or 0)+float(f.get('Duration') or 0)
+                            clipLength=max(t, float(clipLength))
+                            
                 passes=passes+1
                 clip['Duration']=clipLength
                 clip['StartTime']=totalDuration
                 #clip['Resolution']='1920x1080'
                 totalDuration+=clipLength
+            #TODO check filter durations too
+
             logging.debug(f'Setting clip Duration '+str(clip['Duration']))
         pass
 
@@ -650,7 +659,7 @@ class VidMaker:
         def vid_graph(inputs, media): 
             graph = []
             nonlocal v_output_num
-            duration=clip['Duration']+0.1
+            duration=clip['Duration']
             fps=25
  
             #scale=width:height[v] 
@@ -706,10 +715,9 @@ class VidMaker:
                 inputs['v'].append(output)
                 inputs['v'].append(mediastream)
                 v_output_num+=1
-            #"""
+            
             #zoompan 
             output=f"v{v_output_num}"
-
             if media['MediaType'].lower()=='image': #FIXME
                 graph.append(f"[{str(inputs['v'].pop())}]"\
                         "zoompan="\
@@ -732,30 +740,6 @@ class VidMaker:
             inputs['v'].append(output)
             v_output_num+=1
 
-            filters=media.get('filters') or []
-            for f in filters:
-                if f['type'].lower()=='drawtext':
-                    #apply video filters
-                    output=f"v{v_output_num}"
-                    graph.append(f"[{str(inputs['v'].pop())}]"\
-                            f"{f.get('type')}="\
-                            f"text={(f.get('Text') or 'Lorem Ipsum').replace(':', '')}:"\
-                            f"fontsize={f.get('FontSize') or 24}:"\
-                            f"fontfile={f.get('FontFile') or 'Arial'}:"\
-                            f"borderw={f.get('BorderWidth') or 1}:"\
-                            f"fontcolor={self.translate_color(f.get('FontColor'))}:"\
-                            f"x={f.get('X') or 0}:"\
-                            f"y={f.get('Y') or 0}:"\
-                            #f"t={f.get('StartTime') or 0}:"\
-                            #f"duration={f.get('Duration') or media['Duration']}:"\
-                            f"alpha={f.get('Alpha') or 1.0}:"\
-                            f"bordercolor={self.translate_color(f.get('BorderColor'))}"\
-                            f"[{output}]")
-                    inputs['v'].append(output)
-                    v_output_num+=1
-                else:
-                    logging.warning(f"Unknown filter: {f['type']}")
-            #overlay filter
             output=f"v{v_output_num}"
             swap(inputs['v'])
             graph.append(f"[{str(inputs['v'].pop())}]"\
@@ -763,36 +747,53 @@ class VidMaker:
                     "overlay="\
                     f"x={str(media['Position']['x'])}:"\
                     f"y={str(media['Position']['y'])}:"\
-                    f"enable='between(t,{str(media['StartTime'])},{str(media['Duration'])})'"\
+                    f"enable='between(t,{media['StartTime']},{media['Duration']})'"\
                     f"[{output}]")
             inputs['v'].append(output)
             v_output_num+=1
+
+            #handle filter
+            filters=media.get('filters') or []
+            output=f"v{v_output_num}"
+            filter_text=[]
+            for f in filters:
+                if f['type'].lower()=='drawtext':
+                    #apply video filters
+                    filter_text.append(f"{f.get('type')}="\
+                            f"text='{(f.get('Text') or 'Lorem Ipsum').replace(':', '')}':"\
+                            f"fontsize={f.get('FontSize') or 24}:"\
+                            f"fontfile={f.get('FontFile') or 'Arial'}:"\
+                            f"borderw={f.get('BorderWidth') or 1}:"\
+                            f"fontcolor={self.translate_color(f.get('FontColor'))}:"\
+                            f"x={f.get('X') or 0}:"\
+                            f"y={f.get('Y') or 0}:"\
+                            f"enable='between(t,{f.get('StartTime') or media['StartTime']},{f.get('Duration') or media['Duration']})':"\
+                            f"alpha={f.get('Alpha') or 1.0}:"\
+                            f"bordercolor={self.translate_color(f.get('BorderColor'))}")
+                else:
+                    logging.warning(f"Unknown filter: {f['type']}")
+            if(len(filter_text)>0):
+                graph.append(f"[{inputs['v'].pop()}]{','.join(filter_text)}[{output}]")
+                inputs['v'].append(output)
+                v_output_num+=1
 
             return ';'.join(graph)
 
         def aud_graph(inputs, media): 
             graph=[]
             nonlocal a_output_num
-            
-            #volume filter
+   
+            #adelay filter
+            adelay=float(media.get('StartTime') or 0.0)
             volume=float(self.pct_to_float(media.get('Volume') or 100.0))
             output=f"a{a_output_num}"
             graph.append(f"[{str(inputs['a'].pop())}]"\
+                    f"adelay=delays={int(adelay*1000)}:all=1,"\
                     f"volume={volume}"\
                     f"[{output}]")
             inputs['a'].append(output)
             a_output_num+=1
             
-            #amix filter
-            swap(inputs['a'])
-            output=f"a{a_output_num}"
-            graph.append(f"[{str(inputs['a'].pop())}]"\
-                    f"[{str(inputs['a'].pop())}]"\
-                    "amix"\
-                    f"[{output}]")
-            inputs['a'].append(output)
-            a_output_num+=1
-
             return ';'.join(graph)
 
         # Add media inputs and generate filter_graph data
@@ -829,6 +830,16 @@ class VidMaker:
             else:
                 # Log a warning for unknown media type
                 logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
+        #amix the sources in filter_graph['a']
+        amix=''
+        output=f"a{a_output_num}"
+        for inp in inputs['a']:
+            amix+=f'[{inp}]'
+        amix+=f'amix=inputs={len(inputs["a"])}:duration=longest[{output}]'
+        inputs['a'].append(output)
+        a_output_num+=1
+        filter_graph['a'].append(amix)
+
         #generate the full filter graph
         v_s= ";".join(filter_graph['v'])
         a_s= ";".join(filter_graph['a'])
