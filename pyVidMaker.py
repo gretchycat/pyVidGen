@@ -384,7 +384,7 @@ class VidMaker:
             if(any(itm in self.globals['md_context'] for itm in ['list','strong','heading','emphasis'])):
                 size=48
                 if 'heading' in self.globals['md_context']:
-                    size=48*3
+                    size=size*3
                 drawtext=ET.SubElement(self.globals['md_filters'], 'filter')
                 drawtext.set('type', 'drawtext')
                 ET.SubElement(drawtext, 'Text').text=f"{text}"
@@ -395,8 +395,15 @@ class VidMaker:
                 ET.SubElement(drawtext, 'FontFile').text=f'font.ttf'
                 ET.SubElement(drawtext, 'BorderColor').text=f'#000'
                 ET.SubElement(drawtext, 'BorderWidth').text=f'5'
-                ET.SubElement(drawtext, 'X').text='(w-text_w)/2'
-                ET.SubElement(drawtext, 'Y').text=f'((h-text_h)/2)+({self.globals["md_count"]-1}*text_h)'
+                ET.SubElement(drawtext, 'BoxColor').text=f'#DDFF007F'
+
+                if 'list' in self.globals['md_context']:
+                    ET.SubElement(drawtext, 'X').text='w/2'
+                    ET.SubElement(drawtext, 'Y').text=f'(h/10)-(text_h-ascent)+({self.globals["md_count"]}*{size})'
+                else:
+                    ET.SubElement(drawtext, 'TextAlign').text='MC'
+                    ET.SubElement(drawtext, 'X').text='(w-tw)/2'
+                    ET.SubElement(drawtext, 'Y').text=f'(h-th)/2'
                 self.globals['md_count']+=1
             #TODO add drawtext filter for contexts
             #TODO handle contexts
@@ -810,16 +817,23 @@ class VidMaker:
                     d=f.get('Duration') or media['Duration']
                     if float(d)==-1.0:
                         d=duration
+                    fontsize=f.get('FontSize') or "48"
+                    boxcolor=f.get('BoxColor')
+                    if boxcolor: 
+                        boxcolor=f'box=1:boxcolor={boxcolor}:boxborderw=5:'
+                    else:
+                        boxcolor=""
                     filter_text.append(f"{f.get('type')}="\
                             f"text='{(f.get('Text') or 'Lorem Ipsum').replace(':', '')}':"\
-                            f"fontsize={f.get('FontSize') or 24}:"\
+                            f"fontsize={fontsize}:"\
                             f"fontfile={f.get('FontFile') or 'Arial'}:"\
                             f"borderw={f.get('BorderWidth') or 1}:"\
                             f"fontcolor={self.translate_color(f.get('FontColor'))}:"\
-                            f"x={f.get('X') or 0}:"\
-                            f"y={f.get('Y') or 0}:"\
+                            f"x={f.get('X') or '(w-tw)/2'}:"\
+                            f"y={f.get('Y') or '(h-th)/2'}:"\
                             f"enable='between(t,{st},{d})':"\
                             f"alpha={f.get('Alpha') or 1.0}:"\
+                            f'{boxcolor}'\
                             f"bordercolor={self.translate_color(f.get('BorderColor'))}")
                 else:
                     logging.warning(f"Unknown filter: {f['type']}")
