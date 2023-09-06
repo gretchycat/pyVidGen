@@ -23,7 +23,9 @@ pexels_API_KEY = "JMdcZ8E4lrykP2QSaZHNxuXKlJRRjmmlvBQRvgu5CrHnSI30BF7mGLI7"
 pixabay_API_KEY = "38036450-c3aaf7be223f4d01b66e68cae"
 
 class VidMaker:
-    def __init__(self, script_file):
+    def __init__(self, script_file, debug):
+        self.globals={}
+        self.fps=60
         self.script_file=script_file
         basefn,self.ext= os.path.splitext(script_file)
         # Output video file
@@ -35,10 +37,10 @@ class VidMaker:
         os.makedirs(self.work_dir, exist_ok=True)
         os.makedirs('search', exist_ok=True)
         self.sub_file = self.work_dir+'/'+basefn+".srt"
-        self.setup_logging()
+        self.setup_logging(debug)
         self.markdown=mistune.create_markdown(renderer=None)
 
-    def setup_logging(self):
+    def setup_logging(self, debug):
         """ Create a formatter with color """
         stderr_formatter = colorlog.ColoredFormatter(
             '%(log_color)s%(levelname)s:%(reset)s%(message)s',
@@ -53,6 +55,16 @@ class VidMaker:
         log_formatter = colorlog.ColoredFormatter(
             '%(levelname)s:%(message)s'
         )
+        level=logging.WARNING
+        if debug.lower()=="debug":
+            level=logging.DEBUG
+        elif debug.lower()=="info":
+            level=logging.INFO
+        elif debug.lower()=="warning":
+            level=logging.WARNING
+        else:
+            level=logging.WARNING
+
 
         # Create a file handler for the log file
         file_handler = logging.FileHandler(self.log_file)
@@ -60,7 +72,7 @@ class VidMaker:
 
         # Create a stream handler for stderr
         stderr_handler = logging.StreamHandler()
-        stderr_handler.setLevel(logging.DEBUG)
+        stderr_handler.setLevel(level)
         stderr_handler.setFormatter(stderr_formatter)
 
         # Configure the root logger with the handlers
@@ -130,7 +142,7 @@ class VidMaker:
             #logging.info('-'*sepw)
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
             for line in process.stdout:
-                #logging.debug(line.rstrip('\n'))
+                logging.debug(line.rstrip('\n'))
                 output+=line
                 print(f'{anim[frame%len(anim)]}\x1b[1A')
                 frame+=1
@@ -268,116 +280,140 @@ class VidMaker:
                     return True
         return False
 
-    def handle_md_children(self, xml, md, context=None, level=0):
-        if not context:
-            context=[]
-        context_items=len(context)
-        for e in md:
+    def handle_md_children(self, xml, md, level=0):
+        list_created=False
+        context_items=len(self.globals['md_context'])
+        for e in md:    
             tp=e['type']
             ch=e.get("children")
             if tp=="heading":
-                self.generate_md_heading(xml, e, context)
-                pass
+                self.generate_md_heading(xml, e)
             elif tp=="list":
-                self.generate_md_list(xml, e, context)
-                pass
+                if not 'list' in self.globals['md_context']:
+                    self.globals['md_join']=True
+                    self.globals['md_count']=0
+                    list_created=True
+                    self.globals['md_filters']=None
+                    self.globals['md_clip']=None
+                    self.generate_md_list(xml, e)
             elif tp=="list_item":
-                self.generate_md_list_item(xml, e, context)
-                pass
+                self.generate_md_list_item(xml, e)
             elif tp=="paragraph":
-                self.generate_md_paragraph(xml, e, context)
-                pass
+                self.generate_md_paragraph(xml, e)
             elif tp=="blank_line":
-                self.generate_md_blank_line(xml, e, context)
-                pass
+                self.generate_md_blank_line(xml, e)
             elif tp=="text":
-                self.generate_md_text(xml, e, context)
-                pass
+                self.generate_md_text(xml, e)
             elif tp=="strong":
-                self.generate_md_strong(xml, e, context)
-                pass
+                self.generate_md_strong(xml, e)
+            elif tp=="emphasis":
+                self.generate_md_emphasis(xml, e)
             else:
                 logging.warning(f'Unhandled md data: {tp}')
+            print("  "*level+tp+ ' ' +str(list_created))
             if ch: 
-                self.handle_md_children(xml, ch, context, level+1)
-        while len(context)>context_items:
-            context.pop()
+                self.handle_md_children(xml, ch, level+1)
+            if list_created:
+                self.globals['md_join']=False
+                print("  "*level+"====")
+                list_created=False
+            if not self.globals['md_join']:
+                while len(self.globals['md_context'])>0:#context_items:
+                    self.globals['md_context'].pop()
+                self.globals['md_filters']=None
+                self.globals['md_clip']=None
+                self.globals['md_count']=0
+        return
+
+    def generate_md_heading(self, xml, md):
+        self.globals['md_context'].append('heading')
+
+    def generate_md_emphasis(self, xml, md):
+        self.globals['md_context'].append('emphasis')
+
+    def generate_md_list(self, xml, md):
+            self.globals['md_context'].append('list')
+
+    def generate_md_paragraph(self, xml, md):
         pass
 
-    def generate_md_heading(self, xml, md, context):
-        context.append('heading')
-
-    def generate_md_list(self, xml, md, context):
+    def generate_md_blank_line(self, xml, md):
         pass
 
-    def generate_md_paragraph(self, xml, md, context):
+    def generate_md_list_item(self, xml, md):
         pass
 
-    def generate_md_blank_line(self, xml, md, context):
-        pass
-
-    def generate_md_list_item(self, xml, md, context):
-        context.append('list')
-
-    def generate_md_text(self, xml, md, context):
-        clip=ET.SubElement(xml, 'Clip')
-        properties=ET.SubElement(clip, 'Properties')
-        #TODO     create clip with media:
-        #normal:  Video capable media, TTS
-        #heading: add text overlay -- Title style
-        #list:    add text overlay -- calculate position in a list style, keep text for duration of list
-        #strong:  add text overlay -- calculate position keep for duration of text after the bold
+    def generate_md_text(self, xml, md):
         text=md.get('raw')
-        tts_media=ET.SubElement(clip, 'Media')
-        tts_media.set("type", "TTS")
-        img_media=ET.SubElement(clip, 'Media')
-        img_media.set('type', 'Image')
-        if(text):
+        img_media=None
+        tts_media=None
+        ttsdelay=0.0
+        if not self.globals['md_clip']:
+            self.globals['md_clip']=ET.SubElement(xml, 'Clip')
+            self.globals['md_filters']=None
+            properties=ET.SubElement(self.globals['md_clip'], 'Properties')
+        #TODO     create clip with media:
+        if not self.globals['md_filters']:
+            #normal:  Video capable media, TTS
+            #heading: add text overlay -- Title style
+            #list:    add text overlay -- calculate position in a list style, keep text for duration of list
+            #strong:  add text overlay -- calculate position keep for duration of text after the bold
+            img_media=ET.SubElement(self.globals['md_clip'], 'Media')
+            img_media.set('type', 'Image')
             ttsdelay=0.0
-            ET.SubElement(img_media, 'Description').text=text#f'{" ".join(self.filter_text(text))}'
-            ET.SubElement(img_media, 'FilePath').text=f'{self.generate_temp_filename(text)}.png'
-            ET.SubElement(img_media, 'StartTime').text=f'0.0'
-            ET.SubElement(img_media, 'Duration').text=f'-1'
-            ET.SubElement(img_media, 'Position').text=f'Aspect'
-            filters=ET.SubElement(img_media, 'filters')
-            if('list' in context or 'strong' in context or 'heading' in context):
+        else:
+            ttsdelay=-1
+     
+        tts_media=ET.SubElement(self.globals['md_clip'], 'Media')
+        tts_media.set("type", "TTS")
+        ET.SubElement(tts_media, 'Script').text=f'{text}'
+        ET.SubElement(tts_media, 'FilePath').text=f'{self.generate_temp_filename(text)}.wav'
+        ET.SubElement(tts_media, 'StartTime').text=f'{ttsdelay}'
+        ET.SubElement(tts_media, 'Duration').text=f'-1'
+        ET.SubElement(tts_media, 'UseForCC').text=f'True'
+        ET.SubElement(tts_media, 'Volume').text=f'100%'
+        if(text):
+            if not self.globals['md_filters']:
+                self.globals['md_filters']=ET.SubElement(img_media, 'filters')
+            if(img_media):
+                ET.SubElement(img_media, 'Description').text=text#f'{" ".join(self.filter_text(text))}'
+                ET.SubElement(img_media, 'FilePath').text=f'{self.generate_temp_filename(text)}.png'
+                ET.SubElement(img_media, 'StartTime').text=f'0.0'
+                ET.SubElement(img_media, 'Duration').text=f'-1'
+                ET.SubElement(img_media, 'Position').text=f'Aspect'
+            if(any(itm in self.globals['md_context'] for itm in ['list','strong','heading','emphasis'])):
                 size=48
-                if 'heading' in context:
+                if 'heading' in self.globals['md_context']:
                     size=48*3
-                ttsdelay=0.0
-                drawtext=ET.SubElement(filters, 'filter')
+                drawtext=ET.SubElement(self.globals['md_filters'], 'filter')
                 drawtext.set('type', 'drawtext')
                 ET.SubElement(drawtext, 'Text').text=f"{text}"
                 ET.SubElement(drawtext, 'StartTime').text=f'0'
                 ET.SubElement(drawtext, 'Duration').text=f'-1'
-                ET.SubElement(drawtext, 'FontSize').text=f'size'
+                ET.SubElement(drawtext, 'FontSize').text=f'{size}'
                 ET.SubElement(drawtext, 'FontColor').text=f'#FFF'
                 ET.SubElement(drawtext, 'FontFile').text=f'font.ttf'
                 ET.SubElement(drawtext, 'BorderColor').text=f'#000'
                 ET.SubElement(drawtext, 'BorderWidth').text=f'5'
                 ET.SubElement(drawtext, 'X').text='(w-text_w)/2'
-                ET.SubElement(drawtext, 'Y').text='(h-text_h)/2'
-            ET.SubElement(tts_media, 'Script').text=f'{text}'
-            ET.SubElement(tts_media, 'FilePath').text=f'{self.generate_temp_filename(text)}.wav'
-            ET.SubElement(tts_media, 'StartTime').text=f'{ttsdelay}'
-            ET.SubElement(tts_media, 'Duration').text=f'-1'
-            ET.SubElement(tts_media, 'UseForCC').text=f'True'
-            ET.SubElement(tts_media, 'Volume').text=f'100%'
-
-
+                ET.SubElement(drawtext, 'Y').text=f'((h-text_h)/2)+({self.globals["md_count"]-1}*text_h)'
+                self.globals['md_count']+=1
             #TODO add drawtext filter for contexts
             #TODO handle contexts
         else:
             logging,warning('Missing "raw" text')#TODO get a better warning
-        if len(context)>0:
-            context.pop()
-        pass
+        return
 
-    def generate_md_strong(self, xml, md, context=[]):
-        context.append('strong')
+    def generate_md_strong(self, xml, md):
+        self.globals['md_context'].append('strong')
 
     def parse_md_video_script(self, filename):
         file=None
+        self.globals['md_context']=[]
+        self.globals['md_filters']=None
+        self.globals['md_clip']=None
+        self.globals['md_count']=0
+        self.globals['md_join']=False
         try:
             file=open(filename,"r")
         except:
@@ -399,11 +435,12 @@ class VidMaker:
         defaults=ET.SubElement(xml, 'Defaults')
         ET.SubElement(defaults, 'BackgroundColor').text='#000'
         ET.SubElement(defaults, 'BackgroundMusic').text='bgm.mp3'
+        
         ET.SubElement(defaults, 'LoopBGM').text='true'
         ET.SubElement(defaults, 'BackgroundVolume').text='5%'
         ET.SubElement(defaults, 'TranstionType').text='fade'
         ET.SubElement(defaults, 'TransitionTime').text='0.5'
-        ET.SubElement(defaults, 'Resolution').text='1920x1080'
+        ET.SubElement(defaults, 'Resolution').text=f'{self.resolution or "1920x1080"}'
         clips=ET.SubElement(xml, 'Clips')
         self.handle_md_children(clips, md)
         xml_str=ET.tostring(xml, encoding='utf-8')
@@ -423,6 +460,8 @@ class VidMaker:
         if global_defaults is not None:
             for child in global_defaults:
                 global_defaults_dict[child.tag] = child.text
+        if not self.resolution:
+            self.resolution=global_defaults_dict.get ('Resolution') or '1920x1080' 
         # Retrieve all clips in the script
         all_clips = root.findall(".//Clip")
         for clip_element in all_clips:
@@ -483,6 +522,8 @@ class VidMaker:
                         media['Duration']=-1
                     if not media.get('StartTime'):
                         media['StartTime']=0
+                    if float(media['StartTime'])==-1.0:
+                        media['StartTime']=clipLength
                     if float(media['Duration'])==-1.0:
                         if media['MediaType']=='Image' or media['MediaType'] == 'TextOverlay':
                             if passes>0:
@@ -497,13 +538,20 @@ class VidMaker:
                     filters=media.get('filters')
                     if filters:
                         for f in filters:
-                            t=float(f.get('StartTime') or 0)+float(f.get('Duration') or 0)
-                            clipLength=max(t, float(clipLength))
+                            st=float(f.get('StartTime') or 0)
+                            d=float(f.get('Duration') or 0)
+                            if st==-1.0:
+                                st=clipLength
+                            if d==-1.0:
+                                d=totalDuration-clipLength
+                            #f['StartTime']=st
+                            #f['Duration']=d
+                            #clipLength=max(st+d, float(clipLength))
                             
                 passes=passes+1
                 clip['Duration']=clipLength
-                clip['StartTime']=totalDuration
-                #clip['Resolution']='1920x1080'
+                clip['StartTime']=0#totalDuration
+                #clip['Resolution']=self.resolution
                 totalDuration+=clipLength
             #TODO check filter durations too
 
@@ -511,7 +559,7 @@ class VidMaker:
         pass
 
     def fix_placement(self, media):
-        o_w, o_h=1920, 1080
+        o_w, o_h=map(int, self.resolution.split('x'))
         w,h=o_w,o_h
         x,y = 0,0
         rot = 0.0
@@ -622,7 +670,7 @@ class VidMaker:
             if not video_stream_exists:
                 logging.info(f'Adding a blank video stream to {input_file}.')
                 vcodec='h264'
-                ffmpeg_cmd.extend(['-f', 'lavfi', '-i', 'color=c=black:s=1920x1080'])
+                ffmpeg_cmd.extend(['-f', 'lavfi', '-i', f'color=c=black:s={self.resolution}'])
 
             ffmpeg_cmd.extend(['-c:v', f'{vcodec}', '-c:a', f'{acodec}', '-map', '0', '-map', '1', '-shortest', temp_output_file])
             if acodec!='copy' or vcodec!='copy':
@@ -645,7 +693,7 @@ class VidMaker:
         a_output_num=0
         # Add background color input
         stream_num=0
-        command.extend(['-f', 'lavfi', '-i', f'color={self.translate_color(clip["BackgroundColor"])}:size=1920x1080:duration={clip["Duration"]}'])
+        command.extend(['-f', 'lavfi', '-i', f'color={self.translate_color(clip["BackgroundColor"])}:size={self.resolution}:duration={clip["Duration"]}'])
         inputs['v'].append(f"{stream_num}:v")
 
         #Add blank Audio (set the format)
@@ -660,7 +708,6 @@ class VidMaker:
             graph = []
             nonlocal v_output_num
             duration=clip['Duration']
-            fps=25
  
             #scale=width:height[v] 
             if media['Position'].get('fill'): 
@@ -671,8 +718,8 @@ class VidMaker:
                     graph.append(f"[{str(inputs['v'].pop())}]"\
                             "zoompan="\
                             f"'min(zoom+0.0005,1.5)':"\
-                            f"d={int(duration*fps)}:"\
-                            f"fps={fps}:"\
+                            f"d={int(duration*self.fps)}:"\
+                            f"fps={self.fps}:"\
                             f"x='iw/2-(iw/zoom/2)':"\
                             f"y='ih/2-(ih/zoom/2)'"\
                             f"[{output}]")
@@ -722,8 +769,8 @@ class VidMaker:
                 graph.append(f"[{str(inputs['v'].pop())}]"\
                         "zoompan="\
                         f"'min(zoom+0.0005,1.5)':"\
-                        f"d={int(duration*fps)}:"\
-                        f"fps={fps}:"\
+                        f"d={int(duration*self.fps)}:"\
+                        f"fps={self.fps}:"\
                         f"x='iw/2-(iw/zoom/2)':"\
                         f"y='ih/2-(ih/zoom/2)'"\
                         f"[{output}]")
@@ -758,7 +805,11 @@ class VidMaker:
             filter_text=[]
             for f in filters:
                 if f['type'].lower()=='drawtext':
-                    #apply video filters
+                    #apply vidoeo filters
+                    st=f.get('StartTime') or media['StartTime']
+                    d=f.get('Duration') or media['Duration']
+                    if float(d)==-1.0:
+                        d=duration
                     filter_text.append(f"{f.get('type')}="\
                             f"text='{(f.get('Text') or 'Lorem Ipsum').replace(':', '')}':"\
                             f"fontsize={f.get('FontSize') or 24}:"\
@@ -767,7 +818,7 @@ class VidMaker:
                             f"fontcolor={self.translate_color(f.get('FontColor'))}:"\
                             f"x={f.get('X') or 0}:"\
                             f"y={f.get('Y') or 0}:"\
-                            f"enable='between(t,{f.get('StartTime') or media['StartTime']},{f.get('Duration') or media['Duration']})':"\
+                            f"enable='between(t,{st},{d})':"\
                             f"alpha={f.get('Alpha') or 1.0}:"\
                             f"bordercolor={self.translate_color(f.get('BorderColor'))}")
                 else:
@@ -884,25 +935,6 @@ class VidMaker:
 
     def join_clips(self, clips, background_audio_file, sub_file, output_file):
         #FIXME this is not right yet
-        """
-        ffmpeg\
-            -i temp_20230801231344616581.mp4\
-            -i temp_20230801231344616624.mp4\
-            -i temp_20230801231344616640.mp4\
-            -i temp_20230801231344616650.mp4\
-            -stream_loop -1 -i music.mp3\
-            -i domestication.srt\
-            -filter_complex\
-            "[0:v][1:v]xfade=transition=fade:duration=1:offset=0.5[v01];\
-            [1:v][2:v]xfade=transition=fade:duration=1:offset=0.5[v12];\
-            [2:v][3:v]xfade=transition=fade:duration=1:offset=0.5[v23];\
-            [0:v][v01][v12][v23]concat=n=4:v=1:a=0[vv];\
-            [0:a][1:a][2:a][3:a]concat=n=4:v=0:a=1[aa];\
-            [4:a]volume=0.05[bgm];\
-            [aa][bgm]amix[am]"\
-                -map "[vv]" -map "[am]" -y -t 60 
-                -c:v h264 -c:a aac -pix_fmt yuv420p domestication.mp4
-        """
         #enforce a maximum stream count for the join
         command = ['ffmpeg']
         stream=0
@@ -950,12 +982,13 @@ class VidMaker:
         command.extend(['-c:v', 'h264'])
         command.extend(['-c:a', 'aac'])
         command.extend(['-pix_fmt', 'yuv420p'])
+        #command.extend(['fps', f'{self.fps}'])
         command.extend([output_file])
-
         # Execute the command and capture the output
         self.execute_command(command)
     
-    def create(self):
+    def create(self, resolution, check_only):
+        self.resolution=resolution 
         self.si=SearchImages(pexels_API_KEY, pixabay_API_KEY, logging)
         if self.ext.lower()==".md":
             xml_file = self.parse_md_video_script(f"{self.script_file}")
@@ -965,26 +998,30 @@ class VidMaker:
             if(missing):
                 logging.error(f'There are {missing} missing media files.')
             else:
-                for clip in clips: 
-                    self.generate_clip(clip)
-                self.generate_srt(clips, self.sub_file)
-                self.join_clips(clips, defaults.get("BackgroundMusic"), self.sub_file, self.output_file)
+                if not check_only:
+                    for clip in clips: 
+                        self.generate_clip(clip)
+                    self.generate_srt(clips, self.sub_file)
+                    self.join_clips(clips, defaults.get("BackgroundMusic"), self.sub_file, self.output_file)
         else:
             logging.error(f"Unknown script type: {ext.lower()}")
 
 def main():
     parser=OptionParser(usage="usage: %prog [options] xmlVideoScript.xml")
-    parser.add_option("-c", "--check", dest="check", default=False,
+    parser.add_option("-c", "--check", action='store_true', dest="check", default=False,
             help="Don't render, only check the XML and find missing media.")
-    parser.add_option("-d", "--debug", dest="debug", default=False,
+    parser.add_option("-d", "--debug", dest="debug", default="info",
             help="Show debug messages.")
+    parser.add_option("-r", "--resolution", dest="resolution", default=False,
+            help="Set render resolution.")
+
     (options, args)=parser.parse_args()
     if len(args)==0:
         parser.print_help()
         return
     script_file = args[0]
-    vm=VidMaker(script_file)
-    vm.create()
+    vm=VidMaker(script_file, options.debug)
+    vm.create(options.resolution, options.check)
 
 if __name__ == "__main__":
     main()
