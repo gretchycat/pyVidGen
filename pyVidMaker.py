@@ -50,8 +50,6 @@ class VidMaker:
         else:
             basefn=self.basefn0
             self.resolution=False
-        # Output video file
-        self.output_file =basefn+".mp4"
         # Log file
         self.log_file = basefn+".log"
         # Set up logging
@@ -166,15 +164,22 @@ class VidMaker:
         #self.si.search_images_bing(search_query, num_images, output_directory)
         self.si.search_images_pixabay(search_query, num_images, output_directory)
 
-    def generate_tts_audio_buffer(self, audio_buffer_file, text_content):
+    def generate_tts_audio_buffer(self, audio_buffer_file, text_content, voice='gtts', lang='en', tld='com.au', speed=1.0 ):
         """
         Generates a TTS audio buffer using GTTS from the provided text content
         and saves it to the specified audio buffer file.
         """
+        #TODO Add Mozilla TTS and pyTTS
         if not self.file_exists(audio_buffer_file):
-            tts = gTTS(text=text_content)
-            #tts.speed=(7.0/8.0)
-            tts.save(audio_buffer_file)
+            if voice=='gtts':
+                tts = gTTS(text=text_content, lang=lang, tld=tld)
+                #tts.speed=(speed)
+                tts.save(audio_buffer_file)
+            else:
+                tts = gTTS(text=text_content)
+                #tts.speed=(speed)
+                tts.save(audio_buffer_file)
+
 
     def dir_exists(self, file_path):
         """
@@ -1040,7 +1045,6 @@ class VidMaker:
         elif self.ext.lower()=='.xml':
 
             clips, defaults, info = self.parse_xml_video_script(f"{self.script_file}")
-            #self.output_file=f"{basefn}.mp4"
             if info.get('Title'):
                 basefn=info.get('Title')
                 self.basefn0=info.get('Title')
@@ -1054,6 +1058,7 @@ class VidMaker:
                     for clip in clips: 
                         self.generate_clip(clip)
                     self.generate_srt(clips, self.sub_file)
+                    self.output_file=f'{self.basefn0}.{self.resolution}.mp4'
                     self.join_clips(clips, defaults.get("BackgroundMusic"), self.sub_file, self.output_file)
         else:
             logging.error(f"Unknown script type: {ext.lower()}")
@@ -1090,8 +1095,6 @@ def main():
             print(f'{more} has been written.')
             vm=VidMaker(more, False, options.debug)
             vm.create(options.check)
- 
-        
 
 if __name__ == "__main__":
     main()
