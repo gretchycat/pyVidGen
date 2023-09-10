@@ -173,6 +173,7 @@ class termKeyboard:
 class imageSelect:
     def __init__(self):
         self.image_support=[]
+        self.img_cache={}
         term=os.environ.get('TERM', '')
         konsole_ver=os.environ.get('KONSOLE_VERSION', '')
         if 'kitty' in term:
@@ -180,13 +181,15 @@ class imageSelect:
         if 'vt340' in term or len(konsole_ver or '')>0:
             self.image_support.append('sixel')
 
-    def execute_command(self, command):
+    def execute_command(self, command, pipe=None):
         """
         Executes a command in the system and logs the command line and output.
         """
         try:
             output=""
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+            if pipe:
+                process.stdin.write(pipe)
             for line in process.stdout:
                 #logging.debug(line.rstrip('\n'))
                 output+=line
@@ -242,20 +245,8 @@ class imageSelect:
             return window_info
         import subprocess
 
-        def run(command):
-            pprint(' '.join(command))
-            try:
-                # Run the command and capture its output
-                result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
-                # Check if the command was successful
-                if result.returncode == 0:
-                    return result.stdout
-                else:
-                    return result.stderr
-            except Exception as e:
-                return str(e)
-
         desc=""
+        i=self.img_cache.get(image)
         if(showInfo):
             img = Image.open(image)
             imgX,imgY=img.size
@@ -266,8 +257,8 @@ class imageSelect:
             descY=int(y+h)-1
             desc=f'\x1b[s\x1b[48;5;245;30m\x1b[{descY};{descX}H{desc}\n'
         start_pos = f'\x1b[{y};{x+1}H'
-        image_size = f'\x1b[8;{h};{w}t'
-        if len(self.image_support)>0:
+        #image_size = f'\x1b[8;{h};{w}t'
+        if not self.img_cache.get(image):
             img = Image.open(image)
             img_w, img_h=img.size
             img_ar=img_h/img_w
@@ -281,29 +272,22 @@ class imageSelect:
                 scale=scale2
             new_h=img_h/scale/2
             new_w=img_w/scale
-            img = img.resize((int(new_w*cell_w), int(new_h*cell_h)), Image.LANCZOS)
-            # Generate a PNG stream
-            png_stream = io.BytesIO()
-            img.save(png_stream, format='PNG')
-            png_stream.seek(0)
-            out=''
             if 'kitty' in self.image_support:
+                img = img.resize((int(new_w*cell_w), int(new_h*cell_h)), Image.LANCZOS)
+                # Generate a PNG stream
+                png_stream = io.BytesIO()
+                img.save(png_stream, format='PNG')
+                png_stream.seek(0)
                 items={"a": "T", "f":100}#, "r":h, "c":w}
-                out=f'{start_pos}{image_size}{write_chunked(png_stream.getvalue(), items)}'
+                self.img_cache[image]=write_chunked(png_stream.getvalue(), items)
+                png_stream.close()
             elif 'sixel' in self.image_support:
-                #sxi=self.execute_command(['img2sixel', '-w', f'{int(new_w*cell_w)}', '-h', f'{int(new_h*cell_h)}', image])
-                #writer = sixel.sixel.SixelWriter()
-                #writer.draw('test.png')
-
-
-                sxi='sixel broken'
-                out=f'{start_pos}{sxi}'
-            else:
-                pprint(self.image_support)
-            png_stream.close()
-            return out+desc
+                self.img_cache[image]=self.execute_command(['img2sixel', '-w', f'{int((new_w-1)*cell_w)}', '-h', f'{int(new_h*cell_h)}', image])#, png_stream)
+        if self.img_cache.get(image):
+            return f'{start_pos}{self.img_cache[image]}{desc}'
         ic=ICat(w=int(w), h=int(h), zoom='aspect', f=True, x=int(x), y=int(y)) 
-        return ic.print(image)+desc
+        ansi=ic.print(image)
+        return f'{start_pos}{ansi}{desc}'
 
     def convert_to_escape(self, text):
         escape_text = ""
@@ -398,9 +382,13 @@ class imageSelect:
             if key=="Enter":
                 if selected<len(images):
                     print(self.clear_images(), end='')
+                    show=self.img_cache.get(images[selected])
+                    self.img_cache[images[selected]]=False
                     print(self.showImage(images[selected],\
                         w=int(screencolumns),\
                         h=int(screenrows))+'-'*(int(screencolumns)))
+
+                    self.img_cache[images[selected]]=show
                     print("\x1b[KSelect this image? (y/n)")
                     key=kb.read_keyboard_input()
                     if key=='y' or key=='Y':

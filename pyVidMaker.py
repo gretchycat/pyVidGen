@@ -180,7 +180,6 @@ class VidMaker:
                 #tts.speed=(speed)
                 tts.save(audio_buffer_file)
 
-
     def dir_exists(self, file_path):
         """
         Checks if a file exists at the given file path.
