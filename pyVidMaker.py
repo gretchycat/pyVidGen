@@ -100,19 +100,21 @@ class VidMaker:
         logging.root.setLevel(logging.DEBUG)
 
     def pct_to_float(self, percentage_str):
-        if "%" in percentage_str:
-            # Remove "%" sign and convert to float
-            value = float(percentage_str.replace("%", ""))
-        else:
-            # Convert string to float
-            value = float(percentage_str)
+        if type(percentage_str) == str:
+            if "%" in percentage_str:
+                # Remove "%" sign and convert to float
+                value = float(percentage_str.replace("%", ""))
+            else:
+                # Convert string to float
+                value = float(percentage_str)
 
-        if value >= 0 and value <= 1:
-            return value
-        elif value >= 5 and value <= 100:
-            return value / 100
-        else:
-            raise ValueError("Percentage value is outside the valid range")
+            if value >= 0 and value <= 1:
+                return value
+            elif value >= 5 and value <= 100:
+                return value / 100
+            else:
+                raise ValueError("Percentage value is outside the valid range")
+        return 100.0
 
     def translate_color(self, color):
         if len(color) == 4 and color.startswith("#"):  # Handle 3-character color code
@@ -608,7 +610,7 @@ class VidMaker:
         fill={}
         pos_type=''
         if(media):
-            i_w, i_h=self.get_file_resolution(self.work_dir+'/'+media.get('FilePath'))
+            i_w, i_h=self.get_file_resolution(f'{self.work_dir}/{media.get("FilePath")}')
             if i_w>0 and i_h>0:
                 h=o_h
                 w=i_w/i_h*o_h
@@ -885,7 +887,7 @@ class VidMaker:
    
             #adelay filter
             adelay=float(media.get('StartTime') or 0.0)
-            volume=float(self.pct_to_float(media.get('Volume') or 100.0))
+            volume=float(self.pct_to_float(media.get('Volume'))) or 100.0
             output=f"a{a_output_num}"
             graph.append(f"[{str(inputs['a'].pop())}]"\
                     f"adelay=delays={int(adelay*1000)}:all=1,"\
@@ -903,7 +905,7 @@ class VidMaker:
                 command.extend([
                     "-i", self.work_dir+'/'+media["FilePath"],
                 ])
-                hasaudio=has_audio(self.work_dir+'/'+media['FilePath'])
+                hasaudio=self.has_audio(f"{self.work_dir}/{media['FilePath']}")
                 stream_num+=1
                 inputs['v'].append(f"{stream_num}:v")
                 if hasaudio:
