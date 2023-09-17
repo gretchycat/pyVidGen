@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from pprint import pprint
 from optparse import OptionParser
 from gtts import gTTS
-from imageSelect import imageSelect
+from icat import imageSelect
 from urllib.parse import quote_plus
 from SearchImages import SearchImages
 
@@ -53,6 +53,7 @@ class VidMaker:
         # Log file
         self.log_file = basefn+".log"
         # Set up logging
+        self.debug=debug
         self.setup_logging(debug)
         self.work_dir = self.basefn0+'.work'
         os.makedirs(self.work_dir, exist_ok=True)
@@ -223,9 +224,9 @@ class VidMaker:
                     #reset logging
                     for handler in logging.root.handlers[:]:
                         logging.root.removeHandler(handler)
-                    imgs=imageSelect()
+                    imgs=imageSelect.imageSelect()
                     imgs.interface(file_path, glob.glob(f'{search_dir}/*'), description[:40])
-                    self.setup_logging()
+                    self.setup_logging(self.debug)
                     #shutil.rmtree('image_temp', ignore_errors=True)
             missing=0 if self.file_exists(file_path) else 1
             if missing>0:
@@ -820,7 +821,6 @@ class VidMaker:
                 inputs['v'].append(output)
                 v_output_num+=1
 
-            #scale=width:height[v] 
             output=f"v{v_output_num}"
             graph.append(f"[{str(inputs['v'].pop())}]"\
                     "scale="\
