@@ -202,6 +202,7 @@ class VidMaker:
         return False
 
     def get_missing_file(self, type, file_path, description, script):
+        copied=""
         if file_path:
             log=logging.info
             verb="Acquiring"
@@ -225,7 +226,10 @@ class VidMaker:
                     for handler in logging.root.handlers[:]:
                         logging.root.removeHandler(handler)
                     imgs=imageSelect.imageSelect()
-                    imgs.interface(file_path, glob.glob(f'{search_dir}/*'), description[:40])
+                    copied=imgs.interface(file_path, glob.glob(f'{search_dir}/*'), description[:40])
+                    if copied != file_path:
+                        #TODO update xml
+                        pass
                     self.setup_logging(self.debug)
                     #shutil.rmtree('image_temp', ignore_errors=True)
             missing=0 if self.file_exists(file_path) else 1
@@ -747,6 +751,9 @@ class VidMaker:
         def swap(list):
             list[-1], list[-2] = list[-2], list[-1]
 
+        def isImage(filepath):
+            return os.path.splitext(filepath)[1].lower() in [ '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.xcf' ]
+
         def vid_graph(inputs, media): 
             graph = []
             nonlocal v_output_num
@@ -901,7 +908,12 @@ class VidMaker:
         # Add media inputs and generate filter_graph data
         for media in clip['Media']:
             media_type = media['MediaType']
-            if media_type == 'Video':
+            if media_type in [ 'Video', 'Image' ]:
+                if isImage(media['FilePath']):
+                    command.extend([
+                        "-loop", "1",
+                    ])
+
                 command.extend([
                     "-i", self.work_dir+'/'+media["FilePath"],
                 ])
@@ -914,14 +926,6 @@ class VidMaker:
                 if hasaudio:
                     filter_graph['a'].append(aud_graph(inputs, media))
 
-            elif media_type == 'Image':
-                command.extend([
-                    "-loop", "1",
-                    "-i", self.work_dir+'/'+media["FilePath"],
-                ])
-                stream_num+=1
-                inputs['v'].append(f"{stream_num}:v")
-                filter_graph['v'].append(vid_graph(inputs, media))
             elif media_type in [ 'Audio', "TTS" ]:
                 command.extend([
                     "-i", self.work_dir+'/'+media["FilePath"],
