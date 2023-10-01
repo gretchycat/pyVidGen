@@ -7,9 +7,9 @@ import urllib.parse
 import os
 
 class SearchImages:
-    def __init__(self, pexels, pixabay, log):
-        self.pexels_API_KEY=pexels
-        self.pixabay_API_KEY=pixabay
+    def __init__(self, config, log):
+        self.pexels_API_KEY=config['apikeys']['pexels']
+        self.pixabay_API_KEY=config['apikeys']['pixabay']
         self.log=log
 
     def search_images_pexels(self, query, num_images, output_directory):

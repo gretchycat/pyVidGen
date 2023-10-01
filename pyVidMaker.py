@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 import os, hashlib, subprocess, logging, colorlog, datetime, glob, shutil, io
-import requests, json, mistune, urllib.parse, xml.etree.ElementTree as ET
-import string, xml.dom.minidom as minidom, pyte
+import sys, requests, json, mistune, urllib.parse, xml.etree.ElementTree as ET
+import string, xml.dom.minidom as minidom, pyte, configparser, pydub
 from bs4 import BeautifulSoup
 from pprint import pprint
 from optparse import OptionParser
@@ -10,17 +10,16 @@ from icat import imageSelect
 from urllib.parse import quote_plus
 from SearchImages import SearchImages
 
-pexels_API_KEY = "JMdcZ8E4lrykP2QSaZHNxuXKlJRRjmmlvBQRvgu5CrHnSI30BF7mGLI7"
-pixabay_API_KEY = "38036450-c3aaf7be223f4d01b66e68cae"
+def pause():
+    print ('[pause]')
+    return sys.stdin.readline()
 
 def page_fit(text, max_length):
     # Split the text into words
     words = text.split()
-
     # Initialize variables
     result = []
     current_line = []
-
     for word in words:
         if len(' '.join(current_line + [word])) <= max_length:
             # If adding the word to the current line doesn't exceed the max length, add it
@@ -30,11 +29,9 @@ def page_fit(text, max_length):
             if current_line:
                 result.append(' '.join(current_line))
             current_line = [word]
-
     # Add the last line to the result
     if current_line:
         result.append(' '.join(current_line))
-
     return result
 
 class VidMaker:
@@ -167,7 +164,7 @@ class VidMaker:
         #self.si.search_images_bing(search_query, num_images, output_directory)
         self.si.search_images_pixabay(search_query, num_images, output_directory)
 
-    def generate_tts_audio_buffer(self, audio_buffer_file, text_content, voice='gtts', lang='en', tld='com.au', speed=1.0 ):
+    def generate_tts_audio_buffer(self, audio_buffer_file, text_content, voice='gtts', lang='en', tld='com.au', speed=1.0, pitch=1.0):
         """
         Generates a TTS audio buffer using GTTS from the provided text content
         and saves it to the specified audio buffer file.
@@ -175,12 +172,24 @@ class VidMaker:
         #TODO Add Mozilla TTS and pyTTS
         if not self.file_exists(audio_buffer_file):
             if voice=='gtts':
-                tts = gTTS(text=text_content, lang=lang, tld=tld)
-                #tts.speed=(speed)
-                tts.save(audio_buffer_file)
+                tts = gTTS(text_content, lang=lang, tld=tld, slow=False)
+                # Adjust speed and pitch if necessary
+                    # Modify the speech with pydub
+                if speed != 1.0 or pitch != 1.0 and False:
+                    audio = pydub.AudioSegment.from_mp3(io.BytesIO(tts.save_to_buffer(format="mp3").getvalue()))
+                    if speed!=1.0:
+                        pass
+                        #audio = audio.speedup(playback_speed=speed).set_frame_rate(audio.frame_rate)
+                    if pitch != 1.0:
+                        pass
+                        #audio = audio.set_frame_rate(int(audio.frame_rate * pitch))
+                    # Export the modified audio to the specified file
+                    audio.export(audio_buffer_file)
+                else:
+                    # Save the original audio to the specified file
+                    tts.save(audio_buffer_file)
             else:
-                tts = gTTS(text=text_content)
-                #tts.speed=(speed)
+                tts = gTTS(text_content, lang=lang, tld=tld, slow=False)
                 tts.save(audio_buffer_file)
 
     def dir_exists(self, file_path):
@@ -229,7 +238,8 @@ class VidMaker:
                     copied=imgs.interface(file_path, glob.glob(f'{search_dir}/*'), description[:40])
                     if copied != file_path:
                         #TODO update xml
-                        pass
+                        self.rename[file_path]=copied
+                        file_path=copied
                     self.setup_logging(self.debug)
                     #shutil.rmtree('image_temp', ignore_errors=True)
             missing=0 if self.file_exists(file_path) else 1
@@ -348,7 +358,7 @@ class VidMaker:
         self.globals['md_context'].append('emphasis')
 
     def generate_md_list(self, xml, md):
-            self.globals['md_context'].append('list')
+        self.globals['md_context'].append('list')
 
     def generate_md_paragraph(self, xml, md):
         pass
@@ -483,7 +493,7 @@ class VidMaker:
     def parse_xml_video_script(self, filename):
         tree = ET.parse(filename)
         root = tree.getroot()
-        
+        self.rename={} 
         clips = []
         
         # Retrieve Video Info
@@ -547,7 +557,6 @@ class VidMaker:
                             filters.append(f)
                         media_dict[child.tag]=filters
                 media_list.append(media_dict)
-
             clip_dict["Media"] = media_list
             clips.append(clip_dict)
         return clips, global_defaults_dict, info_dict
@@ -724,6 +733,26 @@ class VidMaker:
                 # Rename the temporary output file to the original file name
                 os.remove(input_file)
                 shutil.move(temp_output_file, input_file)
+
+    def process_renames(self, xmlfile):
+        def find_elements_and_replace(element, tag_name, replacement_dict):
+            if element.tag == tag_name:
+                element_text = element.text
+                if replacement_dict.get(element.text):
+                    element.text = replacement_dict[element_text]
+            for child in element:
+                find_elements_and_replace(child, tag_name, replacement_dict)
+
+        if len(self.rename)>0:
+            logging.info(f'Renaming {len(self.rename)} media files in {xmlfile}')
+            tree = ET.parse(xmlfile)
+            root = tree.getroot() 
+            find_elements_and_replace(root, "FilePath", self.rename)
+            xml_str=ET.tostring(root, encoding='utf-8')
+            with open(xmlfile, 'w') as xml_file:
+                xml_file.write(minidom.parseString(xml_str).toprettyxml(indent='    '))
+            return True
+        return False
 
     def generate_clip(self, clip):
         """
@@ -1042,19 +1071,80 @@ class VidMaker:
         # Execute the command and capture the output
         self.execute_command(command)
     
+    def read_config_file(self, config_file_path):
+        """Reads a config file into a dict of dicts.
+        Args:
+          config_file_path: The path to the config file.
+        Returns:
+          A dict of dicts, where the outer keys are the section names and the inner
+          keys are the key-value pairs in the config file.
+        """
+        config = configparser.ConfigParser()
+        config.read(config_file_path)
+        config_dict = {}
+        for section in config.sections():
+            config_dict[section] = {}
+            for option, value in config.items(section):
+                config_dict[section][option] = value
+        return config_dict
+
+    def merge_dict_configs(self, defaults, read):
+        """Merges two dict configs.
+        Args:
+            defaults: The default config dict.
+            read: The read config dict.
+        Returns:
+            A merged config dict.
+        """
+        merged_config = {}
+        for section in defaults:
+            merged_config[section] = defaults[section].copy()
+            if section in read:
+                merged_config[section].update(read[section])
+        return merged_config
+
+    def write_config_dict(config_dict, config_file_path):
+        """Writes a config dict back to the config file.
+        Args:
+            config_dict: The config dict to write.
+            config_file_path: The path to the config file.
+        """
+        config = configparser.ConfigParser()
+        for section, options in config_dict.items():
+            config.add_section(section)
+            for option, value in options.items():
+                config.set(section, option, value)
+        with open(config_file_path, "w") as f:
+            config.write(f)
+
     def create(self, check_only):
-        self.si=SearchImages(pexels_API_KEY, pixabay_API_KEY, logging)
+        config_file=os.path.expanduser("~/.pyVidMaker.conf") 
+        default_config={
+                'apikeys':{
+                    'pexels':'',
+                    'pixabay':''},
+                'defaults':{
+                    'resolution':'1920x1080'}
+                }
+        read=self.read_config_file(config_file)
+        self.config=self.merge_dict_configs(default_config, read)
+        if read != self.config:
+            self.write_config_dict(self.config, config_file)
+        self.si=SearchImages(self.config, logging)
         xml_file=None
         if self.ext.lower()==".md":
-            xml_file = self.parse_md_video_script(f"{self.script_file}")
+            xml_file = self.parse_md_video_script(self.script_file)
         elif self.ext.lower()=='.xml':
-
-            clips, defaults, info = self.parse_xml_video_script(f"{self.script_file}")
+            clips, defaults, info = self.parse_xml_video_script(self.script_file)
             if info.get('Title'):
                 basefn=info.get('Title')
                 self.basefn0=info.get('Title')
                 self.work_dir = self.basefn0+'.work'
             missing=self.check_missing_media(clips)
+            if self.process_renames(self.script_file):
+                logging.info(f'Reloading {self.script_file} after media renames.')
+                clips, defaults, info = self.parse_xml_video_script(self.script_file)
+                missing=self.check_missing_media(clips)
             if(missing):
                 logging.error(f'There are {missing} missing media files.')
             else:
