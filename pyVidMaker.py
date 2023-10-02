@@ -10,6 +10,10 @@ from icat import imageSelect
 from urllib.parse import quote_plus
 from SearchImages import SearchImages
 
+image_types=['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.pcx']
+video_types=['.mp4', '.mkv', '.mpg', '.avi', '.asf', '.qt', '.mov']
+audio_types=['.mp3', '.wav', '.ogg', '.flac', '.alac', '.mp2', ]
+
 def pause():
     print ('[pause]')
     return sys.stdin.readline()
@@ -152,11 +156,21 @@ class VidMaker:
             process.wait()
             process.output=output
             if(process.returncode>0):
-                logging.error(f"Error executing command.") 
+                logging.error(f"Error executing command.")
             #logging.debug('-'*sepw)
             return process
         except Exception as e:
             logging.error(f"Error executing command: {e}")
+
+    def file_exists(self, file_path):
+        """
+        Checks if a file exists at the given file path.
+        Returns True if it exists, False otherwise.
+        """
+        if file_path:
+            if os.path.isfile(file_path):
+                return True
+        return False
 
     def search_images(self, search_query, num_images, output_directory):
         self.si.search_images_pexels(search_query, num_images, output_directory)
@@ -201,13 +215,26 @@ class VidMaker:
             return os.path.isdir(file_path)
         return False
 
-    def file_exists(self, file_path):
+    def update_type(self, file_path):
         """
-        Checks if a file exists at the given file path.
-        Returns True if it exists, False otherwise.
+        Checks if a alternate file exists at the given file path.
+        Returns the existing  file or alt if it exists, False otherwise.
         """
-        if file_path is not None:
-            return os.path.isfile(file_path)
+        if file_path:
+            ext=os.path.splitext(file_path)[1]
+            name=os.path.splitext(file_path)[0]
+            if ext.lower() in image_types+video_types:
+                for e in image_types+video_types:
+                    print(f"Checking {name}{e}")
+                    if os.path.isfile(f'{name}{e}'):
+                        print(f"Found {name}{e}")
+                        return f'{name}{e}'
+            elif ext.lower() in audio_types:
+                for e in audio_types:
+                    if os.path.isfile(f'{name}{e}'):
+                        return f'{name}{e}'
+            if os.path.isfile(file_path):
+                return file_path
         return False
 
     def get_missing_file(self, type, file_path, description, script):
@@ -216,7 +243,7 @@ class VidMaker:
             log=logging.info
             verb="Acquiring"
             log(f"{verb} {type}: {file_path}\n\tDescription: {description}\n\tScript: {script}")
-            if type=="TTS": 
+            if type=="TTS":
                 verb="Generated"
                 self.generate_tts_audio_buffer(file_path, script)
             elif type=="Image":
@@ -227,7 +254,7 @@ class VidMaker:
                     desc=input(f'[\x1b[0;1m{description}\x1b[0m]\n: ')
                     if(desc!=''):
                         description=desc
-                    
+
                     search_dir=f'search/{desc.lower()}'[:24]
                     if not self.dir_exists(search_dir):
                         self.search_images(description, 20, search_dir)
@@ -237,7 +264,6 @@ class VidMaker:
                     imgs=imageSelect.imageSelect()
                     copied=imgs.interface(file_path, glob.glob(f'{search_dir}/*'), description[:40])
                     if copied != file_path:
-                        #TODO update xml
                         self.rename[file_path]=copied
                         file_path=copied
                     self.setup_logging(self.debug)
@@ -253,11 +279,11 @@ class VidMaker:
     def generate_temp_filename(self, fnkey=None):
         if(fnkey):
             translation_table = str.maketrans('', '', string.punctuation + string.whitespace)
-            fnkey = fnkey.translate(translation_table).replace(' ', '_')[:30] 
+            fnkey = fnkey.translate(translation_table).replace(' ', '_')[:30]
             if(len(fnkey)<32):
                 return f"temp_{fnkey}"
             else:
-                return "temp_"+hashlib.md5(fnkey.encode('utf-8')).hexdigest()    
+                return "temp_"+hashlib.md5(fnkey.encode('utf-8')).hexdigest()
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
         return f"temp_{timestamp}"
 
@@ -280,7 +306,7 @@ class VidMaker:
         else:
             if(file_path):
                 logging.error(f"Missing File: {file_path}")
-        return None 
+        return None
 
     def get_file_duration(self, file_path):
         json_data=self.get_file_format(file_path)
@@ -309,7 +335,7 @@ class VidMaker:
     def handle_md_children(self, xml, md, level=0):
         list_created=False
         context_items=len(self.globals['md_context'])
-        for e in md:    
+        for e in md:
             tp=e['type']
             ch=e.get("children")
             if tp=="heading":
@@ -337,7 +363,7 @@ class VidMaker:
             else:
                 logging.warning(f'Unhandled md data: {tp}')
             print("  "*level+tp+ ' ' +str(list_created))
-            if ch: 
+            if ch:
                 self.handle_md_children(xml, ch, level+1)
             if list_created:
                 self.globals['md_join']=False
@@ -389,7 +415,7 @@ class VidMaker:
             ttsdelay=0.0
         else:
             ttsdelay=-1
-     
+
         tts_media=ET.SubElement(self.globals['md_clip'], 'Media')
         tts_media.set("type", "TTS")
         ET.SubElement(tts_media, 'Script').text=f'{text}'
@@ -475,7 +501,7 @@ class VidMaker:
         ET.SubElement(info, 'Time')
         defaults=ET.SubElement(xml, 'Defaults')
         ET.SubElement(defaults, 'BackgroundColor').text='#000'
-        ET.SubElement(defaults, 'BackgroundMusic').text='bgm.mp3' 
+        ET.SubElement(defaults, 'BackgroundMusic').text='bgm.mp3'
         ET.SubElement(defaults, 'LoopBGM').text='true'
         ET.SubElement(defaults, 'BackgroundVolume').text='5%'
         ET.SubElement(defaults, 'TranstionType').text='fade'
@@ -493,16 +519,16 @@ class VidMaker:
     def parse_xml_video_script(self, filename):
         tree = ET.parse(filename)
         root = tree.getroot()
-        self.rename={} 
+        self.rename={}
         clips = []
-        
+
         # Retrieve Video Info
         info = root.find("Info")
         info_dict = {}
         if info is not None:
             for child in info:
                 info_dict[child.tag] = child.text
- 
+
         # Retrieve global defaults
         global_defaults = root.find("Defaults")
         global_defaults_dict = {}
@@ -511,7 +537,7 @@ class VidMaker:
             for child in global_defaults:
                 global_defaults_dict[child.tag] = child.text
         if not self.resolution:
-            self.resolution=global_defaults_dict.get ('Resolution') or '1920x1080' 
+            self.resolution=global_defaults_dict.get ('Resolution') or '1920x1080'
 
         self.fps=info_dict.get('FrameRate') or 25
         self.resolution=self.resolution.lower()
@@ -527,13 +553,13 @@ class VidMaker:
                 if chapter_defaults is not None:
                     for child in chapter_defaults:
                         clip_dict[child.tag] = child.text
-            
+
             # Override defaults with clip-specific settings
             clip_defaults = clip_element.find("Properties")
             if clip_defaults is not None:
                 for child in clip_defaults:
-                    clip_dict[child.tag] = child.text 
-           
+                    clip_dict[child.tag] = child.text
+
             # Add clip filename metadata
             clip_dict["ClipFileName"] = self.generate_temp_filename() + ".mp4"
             media_elements = clip_element.findall(".//Media")
@@ -600,7 +626,7 @@ class VidMaker:
                             #f['StartTime']=st
                             #f['Duration']=d
                             #clipLength=max(st+d, float(clipLength))
-                            
+
                 passes=passes+1
                 clip['Duration']=clipLength
                 clip['StartTime']=0#totalDuration
@@ -624,49 +650,50 @@ class VidMaker:
         fill={}
         pos_type=''
         if(media):
-            i_w, i_h=self.get_file_resolution(f'{self.work_dir}/{media.get("FilePath")}')
-            if i_w>0 and i_h>0:
-                h=o_h
-                w=i_w/i_h*o_h
-                if w>o_w:
-                    fill['width']=int(w)
-                    fill['height']=int(h)
-                    w=o_w
-                    h=i_h/i_w*o_w
-                else:
-                    fill['width']=o_w
-                    fill['height']=int(i_h/i_w*o_w)
-                fill['x'],fill['y']=int((o_w/2)-(fill['width']/2)), int((o_h/2)-(fill['height']/2))
-                if media.get('Position'): 
-                    pos_type=media['Position']
-                    if pos_type.lower()=="stretch":
-                        x, y, w, h=0, 0, o_w, o_h
-                    if pos_type.lower()=="aspect":
-                        
-                        x,y=(o_w-w)/2, (o_h-h)/2
-                    if pos_type.lower()=="fill":
-                        w, h, x, y=fill['width'],fill['height'], fill['x'], fill['y']
-                        fill=None
-                    if pos_type.lower()=="topleft":
-                        w=w*PiP_scale-h_pad
-                        h=h*PiP_scale-h_pad
-                        x=h_pad
-                        y=h_pad
-                    if pos_type.lower()=="topright":
-                        w=w*PiP_scale-h_pad
-                        h=h*PiP_scale-h_pad
-                        x=o_w-h_pad-w
-                        y=h_pad
-                    if pos_type.lower()=="bottomleft":
-                        w=w*PiP_scale-h_pad
-                        h=h*PiP_scale-h_pad
-                        x=h_pad
-                        y=o_h-h_pad-h
-                    if pos_type.lower()=="bottomright":
-                        w=w*PiP_scale-h_pad
-                        h=h*PiP_scale-h_pad
-                        x=o_w-h_pad-w
-                        y=o_h-h_pad-h
+            if media.get("FilePath"):
+                i_w, i_h=self.get_file_resolution(f'{self.work_dir}/{media.get("FilePath")}')
+                if i_w>0 and i_h>0:
+                    h=o_h
+                    w=i_w/i_h*o_h
+                    if w>o_w:
+                        fill['width']=int(w)
+                        fill['height']=int(h)
+                        w=o_w
+                        h=i_h/i_w*o_w
+                    else:
+                        fill['width']=o_w
+                        fill['height']=int(i_h/i_w*o_w)
+                    fill['x'],fill['y']=int((o_w/2)-(fill['width']/2)), int((o_h/2)-(fill['height']/2))
+                    if media.get('Position'):
+                        pos_type=media['Position']
+                        if pos_type.lower()=="stretch":
+                            x, y, w, h=0, 0, o_w, o_h
+                        if pos_type.lower()=="aspect":
+
+                            x,y=(o_w-w)/2, (o_h-h)/2
+                        if pos_type.lower()=="fill":
+                            w, h, x, y=fill['width'],fill['height'], fill['x'], fill['y']
+                            fill=None
+                        if pos_type.lower()=="topleft":
+                            w=w*PiP_scale-h_pad
+                            h=h*PiP_scale-h_pad
+                            x=h_pad
+                            y=h_pad
+                        if pos_type.lower()=="topright":
+                            w=w*PiP_scale-h_pad
+                            h=h*PiP_scale-h_pad
+                            x=o_w-h_pad-w
+                            y=h_pad
+                        if pos_type.lower()=="bottomleft":
+                            w=w*PiP_scale-h_pad
+                            h=h*PiP_scale-h_pad
+                            x=h_pad
+                            y=o_h-h_pad-h
+                        if pos_type.lower()=="bottomright":
+                            w=w*PiP_scale-h_pad
+                            h=h*PiP_scale-h_pad
+                            x=o_w-h_pad-w
+                            y=o_h-h_pad-h
         if pos_type.lower()!='aspect':
             fill=None
         return { "x":int(x), "y":int(y), "width":int(w), "height":int(h), "rotation":rot, 'fill':fill, 'pos':pos_type }
@@ -679,10 +706,12 @@ class VidMaker:
             clip['Position']=self.fix_placement(None)
             media_list = clip.get("Media", [])
             for media in media_list:
-                media["Position"]=self.fix_placement(media)
-                media_type = media.get("MediaType")
+                if self.update_type(f'{self.work_dir}/{media.get("FilePath")}'):
+                    media['FilePath'] = os.path.basename(self.update_type(f'{self.work_dir}/{media.get("FilePath")}'))
                 file_path = media.get("FilePath")
-                buffer_file = media.get("BufferFile")
+                media_type = media.get("MediaType")
+                print(f'{media["FilePath"]}')
+                media["Position"]=self.fix_placement(media)
                 script = media.get('Script')
                 if script and len(script)>0:
                     full_script+=(script or "")+'\n'
@@ -691,15 +720,13 @@ class VidMaker:
                     # Process missing media
                     if file_path and not self.file_exists(file_path):
                         missing+=self.get_missing_file(media_type, self.work_dir+'/'+file_path, description, script)
-                    if buffer_file and not self.file_exists(buffer_file):
-                        missing+=self.get_missing_file(media_type, self.work_dir+'/'+buffer_file, description, script)
             clip['Script']=full_script
         self.fix_durations(clips)
         return missing
 
     def add_missing_streams(self, input_file):
         if self.file_exists(input_file):
-            temp_output_file = self.work_dir+'/'+'temp_output.mp4'    
+            temp_output_file = self.work_dir+'/'+'temp_output.mp4'
             # Run FFprobe to get the stream information
             ffprobe_cmd = ['ffprobe', '-v', 'quiet', '-show_streams', '-print_format', 'json', input_file]
             result = self.execute_command(ffprobe_cmd)
@@ -735,6 +762,8 @@ class VidMaker:
                 shutil.move(temp_output_file, input_file)
 
     def process_renames(self, xmlfile):
+        #FIXME maybe
+        return False
         def find_elements_and_replace(element, tag_name, replacement_dict):
             if element.tag == tag_name:
                 element_text = element.text
@@ -746,7 +775,7 @@ class VidMaker:
         if len(self.rename)>0:
             logging.info(f'Renaming {len(self.rename)} media files in {xmlfile}')
             tree = ET.parse(xmlfile)
-            root = tree.getroot() 
+            root = tree.getroot()
             find_elements_and_replace(root, "FilePath", self.rename)
             xml_str=ET.tostring(root, encoding='utf-8')
             with open(xmlfile, 'w') as xml_file:
@@ -783,15 +812,15 @@ class VidMaker:
         def isImage(filepath):
             return os.path.splitext(filepath)[1].lower() in [ '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.xcf' ]
 
-        def vid_graph(inputs, media): 
+        def vid_graph(inputs, media):
             graph = []
             nonlocal v_output_num
             duration=clip['Duration']
-            #scale=width:height[v] 
-            if media['Position'].get('fill'): 
+            #scale=width:height[v]
+            if media['Position'].get('fill'):
                 mediastream=str(inputs['v'].pop())
                 inputs['v'].append(mediastream)
-                if media['MediaType'].lower()=='image': 
+                if media['MediaType'].lower()=='image':
                     output=f"v{v_output_num}"
                     graph.append(f"[{str(inputs['v'].pop())}]"\
                             "zoompan="\
@@ -803,22 +832,22 @@ class VidMaker:
                             f"[{output}]")
                     inputs['v'].append(output)
                     v_output_num+=1
-                     
-                output=f"v{v_output_num}"   
+
+                output=f"v{v_output_num}"
                 graph.append(f"[{str(inputs['v'].pop())}]"\
                         "eq="\
                         f"brightness=-0.25"\
                         f"[{output}]")
                 inputs['v'].append(output)
                 v_output_num+=1
-                  
+
                 output=f"v{v_output_num}"
                 graph.append(f"[{str(inputs['v'].pop())}]"\
                         "boxblur=5:1"\
                         f"[{output}]")
                 inputs['v'].append(output)
                 v_output_num+=1
-     
+
                 output=f"v{v_output_num}"
                 graph.append(f"[{str(inputs['v'].pop())}]"\
                         "scale="\
@@ -828,7 +857,7 @@ class VidMaker:
                 inputs['v'].append(output)
                 v_output_num+=1
                 output=f"v{v_output_num}"
-               
+
                 swap(inputs['v'])
                 if media['StartTime']==-1:
                     media['StartTime']=0.0
@@ -842,8 +871,8 @@ class VidMaker:
                 inputs['v'].append(output)
                 inputs['v'].append(mediastream)
                 v_output_num+=1
-            
-            #zoompan 
+
+            #zoompan
             output=f"v{v_output_num}"
             if media['MediaType'].lower()=='image': #FIXME
                 graph.append(f"[{str(inputs['v'].pop())}]"\
@@ -891,7 +920,7 @@ class VidMaker:
                         d=duration
                     fontsize=float(f.get('FontSize') or 1)*(self.xres/40)
                     boxcolor=f.get('BoxColor')
-                    if boxcolor: 
+                    if boxcolor:
                         boxcolor=f'box=1:boxcolor={boxcolor}:boxborderw=5:'
                     else:
                         boxcolor=""
@@ -917,10 +946,10 @@ class VidMaker:
 
             return ';'.join(graph)
 
-        def aud_graph(inputs, media): 
+        def aud_graph(inputs, media):
             graph=[]
             nonlocal a_output_num
-   
+
             #adelay filter
             adelay=float(media.get('StartTime') or 0.0)
             volume=float(self.pct_to_float(media.get('Volume'))) or 100.0
@@ -931,7 +960,7 @@ class VidMaker:
                     f"[{output}]")
             inputs['a'].append(output)
             a_output_num+=1
-            
+
             return ';'.join(graph)
 
         # Add media inputs and generate filter_graph data
@@ -1036,7 +1065,7 @@ class VidMaker:
         command.extend(['-c:a', 'copy'])
         command.extend([f'nobgm_{output_file}'])
         self.execute_command(command)
-        command=['ffmpeg'] 
+        command=['ffmpeg']
         #return
         command.extend(['-i', 'nobgm_'+output_file])
         filter_graph_vid+=f'[{stream}:v]'
@@ -1070,7 +1099,7 @@ class VidMaker:
         command.extend([output_file])
         # Execute the command and capture the output
         self.execute_command(command)
-    
+
     def read_config_file(self, config_file_path):
         """Reads a config file into a dict of dicts.
         Args:
@@ -1118,7 +1147,7 @@ class VidMaker:
             config.write(f)
 
     def create(self, check_only):
-        config_file=os.path.expanduser("~/.pyVidMaker.conf") 
+        config_file=os.path.expanduser("~/.pyVidMaker.conf")
         default_config={
                 'apikeys':{
                     'pexels':'',
@@ -1150,7 +1179,7 @@ class VidMaker:
             else:
                 logging.info(f'Found all media files.')
                 if not check_only:
-                    for clip in clips: 
+                    for clip in clips:
                         self.generate_clip(clip)
                     self.generate_srt(clips, self.sub_file)
                     self.output_file=f'{self.basefn0}.{self.resolution}.mp4'
