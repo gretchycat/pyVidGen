@@ -116,7 +116,7 @@ class VidMaker:
                 return value / 100
             else:
                 raise ValueError("Percentage value is outside the valid range")
-        return 100.0
+        return 1.0
 
     def translate_color(self, color):
         if len(color) == 4 and color.startswith("#"):  # Handle 3-character color code
@@ -710,7 +710,10 @@ class VidMaker:
                     media['FilePath'] = os.path.basename(self.update_type(f'{self.work_dir}/{media.get("FilePath")}'))
                 file_path = media.get("FilePath")
                 media_type = media.get("MediaType")
-                print(f'{media["FilePath"]}')
+                if media_type.lower()=='image':
+                    if os.path.splitext(file_path)[1].lower() in video_types:
+                        media['Volume']="0%" #FIXME this isn't working
+                        print("-"*50+"SILENCE!"+"-"*50)
                 media["Position"]=self.fix_placement(media)
                 script = media.get('Script')
                 if script and len(script)>0:
@@ -720,6 +723,9 @@ class VidMaker:
                     # Process missing media
                     if file_path and not self.file_exists(file_path):
                         missing+=self.get_missing_file(media_type, self.work_dir+'/'+file_path, description, script)
+                        if self.update_type(f'{self.work_dir}/{media.get("FilePath")}'): #TODO restructure, eliminate dup
+                            media['FilePath'] = os.path.basename(self.update_type(f'{self.work_dir}/{media.get("FilePath")}'))
+                        file_path = media.get("FilePath")
             clip['Script']=full_script
         self.fix_durations(clips)
         return missing
@@ -952,7 +958,7 @@ class VidMaker:
 
             #adelay filter
             adelay=float(media.get('StartTime') or 0.0)
-            volume=float(self.pct_to_float(media.get('Volume'))) or 100.0
+            volume=float(self.pct_to_float(media.get('Volume'))) or 1.0
             output=f"a{a_output_num}"
             graph.append(f"[{str(inputs['a'].pop())}]"\
                     f"adelay=delays={int(adelay*1000)}:all=1,"\
@@ -1170,10 +1176,10 @@ class VidMaker:
                 self.basefn0=info.get('Title')
                 self.work_dir = self.basefn0+'.work'
             missing=self.check_missing_media(clips)
-            if self.process_renames(self.script_file):
-                logging.info(f'Reloading {self.script_file} after media renames.')
-                clips, defaults, info = self.parse_xml_video_script(self.script_file)
-                missing=self.check_missing_media(clips)
+            #if self.process_renames(self.script_file):
+            #    logging.info(f'Reloading {self.script_file} after media renames.')
+            #    clips, defaults, info = self.parse_xml_video_script(self.script_file)
+            #    missing=self.check_missing_media(clips)
             if(missing):
                 logging.error(f'There are {missing} missing media files.')
             else:
