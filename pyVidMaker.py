@@ -109,11 +109,10 @@ class VidMaker:
             else:
                 # Convert string to float
                 value = float(percentage_str)
-
-            if value >= 0 and value <= 1:
+            if value >= 0.0 and value <= 1.0:
                 return value
-            elif value >= 5 and value <= 100:
-                return value / 100
+            elif value >= 5.0 and value <= 100.0:
+                return value / 100.0
             else:
                 raise ValueError("Percentage value is outside the valid range")
         return 1.0
@@ -225,9 +224,9 @@ class VidMaker:
             name=os.path.splitext(file_path)[0]
             if ext.lower() in image_types+video_types:
                 for e in image_types+video_types:
-                    print(f"Checking {name}{e}")
+                    logging.info(f"Checking {name}{e}")
                     if os.path.isfile(f'{name}{e}'):
-                        print(f"Found {name}{e}")
+                        logging.info(f"Found {name}{e}")
                         return f'{name}{e}'
             elif ext.lower() in audio_types:
                 for e in audio_types:
@@ -254,7 +253,6 @@ class VidMaker:
                     desc=input(f'[\x1b[0;1m{description}\x1b[0m]\n: ')
                     if(desc!=''):
                         description=desc
-
                     search_dir=f'search/{desc.lower()}'[:24]
                     if not self.dir_exists(search_dir):
                         self.search_images(description, 20, search_dir)
@@ -362,12 +360,12 @@ class VidMaker:
                 self.generate_md_emphasis(xml, e)
             else:
                 logging.warning(f'Unhandled md data: {tp}')
-            print("  "*level+tp+ ' ' +str(list_created))
+            #print("  "*level+tp+ ' ' +str(list_created))
             if ch:
                 self.handle_md_children(xml, ch, level+1)
             if list_created:
                 self.globals['md_join']=False
-                print("  "*level+"====")
+                #print("  "*level+"====")
                 list_created=False
             if not self.globals['md_join']:
                 while len(self.globals['md_context'])>0:#context_items:
@@ -957,8 +955,11 @@ class VidMaker:
             nonlocal a_output_num
 
             #adelay filter
+            #print("*"*80)
+            #pprint(media)
             adelay=float(media.get('StartTime') or 0.0)
-            volume=float(self.pct_to_float(media.get('Volume'))) or 1.0
+            volume=float(self.pct_to_float(media.get('Volume')))
+            #print(f'Volume={volume}  ({media.get("Volume") or "None"}) ')
             output=f"a{a_output_num}"
             graph.append(f"[{str(inputs['a'].pop())}]"\
                     f"adelay=delays={int(adelay*1000)}:all=1,"\
@@ -1215,14 +1216,14 @@ def main():
             morefiles.append(vm.create(options.check))
         for x in morefiles:
             if type(x)==str:
-                print(f'{x} has been written.')
+                logging.info(f'{x} has been written.')
                 vm=VidMaker(x, False, options.debug)
                 vm.create(options.check)
     else:
         vm=VidMaker(script_file, False, options.debug)
         more=vm.create(options.check)
         if type(more)==str:
-            print(f'{more} has been written.')
+            logging.info(f'{more} has been written.')
             vm=VidMaker(more, False, options.debug)
             vm.create(options.check)
 
