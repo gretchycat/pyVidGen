@@ -12,77 +12,88 @@ class SearchImages:
         self.pixabay_API_KEY=config['apikeys']['pixabay']
         self.log=log
 
-    def search_images_pexels(self, query, num_images, output_directory):
-        base_url = "https://api.pexels.com/v1/search"
+    def search_media_pexels(self, query, num_media, output_directory, media_type='video'):
+        if media_type.lower()=='video':
+            base_url = "https://api.pexels.com/videos/search"   #videos
+        else:
+            base_url = "https://api.pexels.com/v1/search"       #images
         headers = {"Authorization": self.pexels_API_KEY}
-        params = {"query": query, "per_page": num_images}
+        params = {"query": query, "per_page": num_media}
 
         response = requests.get(base_url, headers=headers, params=params)
 
         if response.status_code == 200:
             data = response.json()
+            videos = data.get("videos", [])
             photos = data.get("photos", [])
 
-            if not photos:
-                self.log.warning("No images found.")
+            if not photos+photos:
+                self.log.warning("No pexels media found.")
                 return
 
             # Create output directory if it doesn't exist
             os.makedirs(output_directory, exist_ok=True)
 
-            # Download and save images
-            for photo in photos:
-                image_url = photo["src"]["original"]
-                image_id = photo["id"]
-                image_extension = image_url.split(".")[-1]
-                image_filename = f"pexels_{image_id}.{image_extension}"
-                image_path = os.path.join(output_directory, image_filename)
+            # Download and save media
+            for media in photos+videos:
+                media_url = media["src"]["original"]
+                media_id = media["id"]
+                media_extension = media_url.split(".")[-1].split('?')[0]
+                media_filename = f"pexels_{media_id}.{media_extension}"
+                media_path = os.path.join(output_directory, media_filename)
 
-                response = requests.get(image_url)
+                response = requests.get(media_url)
                 if response.status_code == 200:
-                    with open(image_path, "wb") as file:
+                    with open(media_path, "wb") as file:
                         file.write(response.content)
-                    self.log.info(f"Downloaded image: {image_filename}")
+                    self.log.info(f"Downloaded media {i+1}/{len(media)}: {media_filename}")
                 else:
-                    self.log.error(f"Error downloading image {image_filename}. Status code: {response.status_code}")
+                    self.log.error(f"Error downloading media {i+1}/{len(media)} {media_filename}. Status code: {response.status_code}")
 
-            self.log.info(f"{num_images} images downloaded to {output_directory}")
+            self.log.info(f"{num_media} media downloaded to {output_directory}")
         else:
-            self.log.error(f"Error occurred while searching images. Status code: {response.status_code}")
+            self.log.error(f"Error occurred while searching media. Status code: {response.status_code}")
 
-    def search_images_pixabay(self, query, num_images, output_directory):
-        base_url = "https://pixabay.com/api/"
+    def search_media_pixabay(self, query, num_media, output_directory, media_type='video'):
+        if media_type.lower()=='video':
+            base_url = "https://pixabay.com/api/videos/"    #videos
+        else:
+            base_url = "https://pixabay.com/api/"           #images
         params = {
             "key": self.pixabay_API_KEY,
             "q": query,
-            "per_page": num_images
+            "per_page": num_media
         }
         response = requests.get(base_url, params=params)
         if response.status_code == 200:
             data = response.json()
-            images = data.get("hits", [])
-            if not images:
-                self.log.error("No images found.")
+            media = data.get("hits", [])
+            if not media:
+                self.log.warning("No pixabay media found.")
                 return
             # Create output directory if it doesn't exist
             os.makedirs(output_directory, exist_ok=True)
-            # Download and save images
-            for i, image in enumerate(images):
-                image_url = image["largeImageURL"]
-                image_id = image["id"]
-                image_extension = image_url.split(".")[-1]
-                image_filename = f"pixabay_{image_id}.{image_extension}"
-                image_path = os.path.join(output_directory, image_filename)
-                response = requests.get(image_url)
-                if response.status_code == 200:
-                    with open(image_path, "wb") as file:
-                        file.write(response.content)
-                    self.log.info(f"Downloaded image {i+1}/{num_images}: {image_filename}")
-                else:
-                    self.log.error(f"Error downloading image {i+1}/{num_images}. Status code: {response.status_code}")
-            self.log.info(f"{num_images} images downloaded to {output_directory}")
+            # Download and save media
+            for i, media in enumerate(media):
+                media_url = media.get("largeImageURL")
+                if not media_url:
+                    media_url=media['videos']['large']['url']
+                if media_url and len(media_url)!=0:
+                    media_id = media["id"]
+                    media_extension = media_url.split(".")[-1].split('?')[0]
+                    media_filename = f"pixabay_{media_id}.{media_extension}"
+                    media_path = os.path.join(output_directory, media_filename)
+
+                    response = requests.get(media_url)
+                    if response.status_code == 200:
+                        with open(media_path, "wb") as file:
+                            file.write(response.content)
+                        self.log.info(f"Downloaded media {i+1}/{len(media)}: {media_filename}")
+                    else:
+                        self.log.error(f"Error downloading media {i+1}/{len(media)}. Status code: {response.status_code}")
+            self.log.info(f"{num_media} media downloaded to {output_directory}")
         else:
-            self.log.error(f"Error occurred while searching images. Status code: {response.status_code}")
+            self.log.error(f"Error occurred while searching media. Status code: {response.status_code}")
 
     def search_images_bing(self, search_query, num_images, output_directory):
         search_query_encoded = quote_plus(search_query)
@@ -164,8 +175,8 @@ def main():
     si=SearchImages(args.pexels_key or "", args.pixabay_key or "", logging);
     si.search_images_google(args.query, args.num_images, args.destination_dir)
     si.search_images_bing(args.query, args.num_images, args.destination_dir)
-    si.search_images_pexels(args.query, args.num_images, args.destination_dir)
-    si.search_images_pixabay(args.query, args.num_images, args.destination_dir)
+    si.search_media_pexels(args.query, args.num_images, args.destination_dir)
+    si.search_media_pixabay(args.query, args.num_images, args.destination_dir)
 
 if __name__ == "__main__":
     main()

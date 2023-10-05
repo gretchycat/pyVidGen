@@ -1,18 +1,28 @@
 #!/usr/bin/python3
 import os, hashlib, subprocess, logging, colorlog, datetime, glob, shutil, io
-import sys, requests, json, mistune, urllib.parse, xml.etree.ElementTree as ET
+import sys, json, mistune, xml.etree.ElementTree as ET, binascii
 import string, xml.dom.minidom as minidom, pyte, configparser, pydub
-from bs4 import BeautifulSoup
 from pprint import pprint
 from optparse import OptionParser
 from gtts import gTTS
 from icat import imageSelect
-from urllib.parse import quote_plus
 from SearchImages import SearchImages
 
 image_types=['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.pcx']
 video_types=['.mp4', '.mkv', '.mpg', '.avi', '.asf', '.qt', '.mov']
 audio_types=['.mp3', '.wav', '.ogg', '.flac', '.alac', '.mp2', ]
+
+def isImage(filepath):
+    return os.path.splitext(filepath)[1].lower() in image_types
+
+def isVideo(filepath):
+    return os.path.splitext(filepath)[1].lower() in video_types
+
+def isAudio(filepath):
+    return os.path.splitext(filepath)[1].lower() in audio_types
+
+def hexdump(v):
+    return binascii.hexlify(v.encode('utf-8')).decode()
 
 def pause():
     print ('[pause]')
@@ -155,7 +165,7 @@ class VidMaker:
             process.wait()
             process.output=output
             if(process.returncode>0):
-                logging.error(f"Error executing command.")
+                logging.error(f"Error executing command. ({process.returncode})")
             #logging.debug('-'*sepw)
             return process
         except Exception as e:
@@ -171,11 +181,11 @@ class VidMaker:
                 return True
         return False
 
-    def search_images(self, search_query, num_images, output_directory):
-        self.si.search_images_pexels(search_query, num_images, output_directory)
+    def search_media(self, search_query, num_images, output_directory):
+        self.si.search_media_pexels(search_query, num_images, output_directory)
         #self.si.search_images_google(search_query, num_images, output_directory)
         #self.si.search_images_bing(search_query, num_images, output_directory)
-        self.si.search_images_pixabay(search_query, num_images, output_directory)
+        self.si.search_media_pixabay(search_query, num_images, output_directory)
 
     def generate_tts_audio_buffer(self, audio_buffer_file, text_content, voice='gtts', lang='en', tld='com.au', speed=1.0, pitch=1.0):
         """
@@ -224,7 +234,7 @@ class VidMaker:
             name=os.path.splitext(file_path)[0]
             if ext.lower() in image_types+video_types:
                 for e in image_types+video_types:
-                    logging.info(f"Checking {name}{e}")
+                    logging.debug(f"Checking {name}{e}")
                     if os.path.isfile(f'{name}{e}'):
                         logging.info(f"Found {name}{e}")
                         return f'{name}{e}'
@@ -248,24 +258,23 @@ class VidMaker:
             elif type=="Image":
                 verb="Found"
                 while not self.file_exists(file_path):
-                    print(f'\x1b[2J\x1b[1;1H\x1b[0;44;1m\x1b[0KPlease enter new search terms.\x1b[0m')
+                    print('\x1b[2J\x1b[1;1H\x1b[0;44;1m\x1b[0KPlease enter new search terms.\x1b[0m')
                     print(f'\x1b[0;1;97mScript: \x1b[0;44;93m"{script}"\x1b[0m')
                     desc=input(f'[\x1b[0;1m{description}\x1b[0m]\n: ')
                     if(desc!=''):
                         description=desc
-                    search_dir=f'search/{desc.lower()}'[:24]
+                    search_dir=f'search/{description.lower()}'[:24]
                     if not self.dir_exists(search_dir):
-                        self.search_images(description, 20, search_dir)
+                        self.search_media(description, 20, search_dir)
+                    imgs=imageSelect.imageSelect()
                     #reset logging
                     for handler in logging.root.handlers[:]:
                         logging.root.removeHandler(handler)
-                    imgs=imageSelect.imageSelect()
                     copied=imgs.interface(file_path, glob.glob(f'{search_dir}/*'), description[:40])
+                    self.setup_logging(self.debug)
                     if copied != file_path:
                         self.rename[file_path]=copied
                         file_path=copied
-                    self.setup_logging(self.debug)
-                    #shutil.rmtree('image_temp', ignore_errors=True)
             missing=0 if self.file_exists(file_path) else 1
             if missing>0:
                 verb="Missing"
@@ -332,7 +341,6 @@ class VidMaker:
 
     def handle_md_children(self, xml, md, level=0):
         list_created=False
-        context_items=len(self.globals['md_context'])
         for e in md:
             tp=e['type']
             ch=e.get("children")
@@ -463,7 +471,7 @@ class VidMaker:
             #TODO add drawtext filter for contexts
             #TODO handle contexts
         else:
-            logging,warning('Missing "raw" text')#TODO get a better warning
+            logging.warning('Missing "raw" text')#TODO get a better warning
         return
 
     def generate_md_strong(self, xml, md):
@@ -642,7 +650,6 @@ class VidMaker:
         rot = 0.0
         pad=0.05
         PiP_scale=0.5
-
         w_pad=pad*o_w
         h_pad=pad*o_h
         fill={}
@@ -711,7 +718,6 @@ class VidMaker:
                 if media_type.lower()=='image':
                     if os.path.splitext(file_path)[1].lower() in video_types:
                         media['Volume']="0%" #FIXME this isn't working
-                        print("-"*50+"SILENCE!"+"-"*50)
                 media["Position"]=self.fix_placement(media)
                 script = media.get('Script')
                 if script and len(script)>0:
@@ -813,9 +819,6 @@ class VidMaker:
         def swap(list):
             list[-1], list[-2] = list[-2], list[-1]
 
-        def isImage(filepath):
-            return os.path.splitext(filepath)[1].lower() in [ '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.xcf' ]
-
         def vid_graph(inputs, media):
             graph = []
             nonlocal v_output_num
@@ -824,7 +827,7 @@ class VidMaker:
             if media['Position'].get('fill'):
                 mediastream=str(inputs['v'].pop())
                 inputs['v'].append(mediastream)
-                if media['MediaType'].lower()=='image':
+                if isImage(media['FilePath']):
                     output=f"v{v_output_num}"
                     graph.append(f"[{str(inputs['v'].pop())}]"\
                             "zoompan="\
@@ -878,7 +881,8 @@ class VidMaker:
 
             #zoompan
             output=f"v{v_output_num}"
-            if media['MediaType'].lower()=='image': #FIXME
+            #if media['MediaType'].lower()=='image': #FIXME
+            if isImage(media['FilePath']):
                 graph.append(f"[{str(inputs['v'].pop())}]"\
                         "zoompan="\
                         f"'min(zoom+0.0005,1.5)':"\
@@ -947,7 +951,6 @@ class VidMaker:
                 graph.append(f"[{inputs['v'].pop()}]{','.join(filter_text)}[{output}]")
                 inputs['v'].append(output)
                 v_output_num+=1
-
             return ';'.join(graph)
 
         def aud_graph(inputs, media):
@@ -1173,7 +1176,6 @@ class VidMaker:
         elif self.ext.lower()=='.xml':
             clips, defaults, info = self.parse_xml_video_script(self.script_file)
             if info.get('Title'):
-                basefn=info.get('Title')
                 self.basefn0=info.get('Title')
                 self.work_dir = self.basefn0+'.work'
             missing=self.check_missing_media(clips)
@@ -1192,7 +1194,7 @@ class VidMaker:
                     self.output_file=f'{self.basefn0}.{self.resolution}.mp4'
                     self.join_clips(clips, defaults.get("BackgroundMusic"), self.sub_file, self.output_file)
         else:
-            logging.error(f"Unknown script type: {ext.lower()}")
+            logging.error(f"Unknown script type: {self.ext.lower()}")
         return xml_file
 
 def main():
