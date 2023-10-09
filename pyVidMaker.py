@@ -7,6 +7,7 @@ from optparse import OptionParser
 from gtts import gTTS
 from icat import imageSelect
 from SearchImages import SearchImages
+from rich.text import Text
 
 image_types=['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.pcx']
 video_types=['.mp4', '.mkv', '.mpg', '.avi', '.asf', '.qt', '.mov']
@@ -28,6 +29,19 @@ def pause():
     print ('[pause]')
     return sys.stdin.readline()
 
+def get_terminal_size():
+    import array, fcntl, sys, termios
+    buf = array.array('H', [0, 0, 0, 0])
+    fcntl.ioctl(sys.stdout, termios.TIOCGWINSZ, buf)
+    # Create a dictionary with meaningful keys
+    window_info = {
+        "rows": buf[0],
+        "columns": buf[1],
+        "width": buf[2],
+        "height": buf[3]
+    }
+    return window_info
+
 def page_fit(text, max_length):
     # Split the text into words
     words = text.split()
@@ -48,8 +62,51 @@ def page_fit(text, max_length):
         result.append(' '.join(current_line))
     return result
 
+def pyte_render(x, y, screen):
+    fg='default'
+    bg='default'
+    bold=False
+    blink=False
+    co={
+            'default': {'fg':7, 'bg':0 },
+            'black'  : {'fg':0, 'bg':0 },
+            'red'    : {'fg':1, 'bg':1 },
+            'green'  : {'fg':2, 'bg':2 },
+            'yellow' : {'fg':3, 'bg':3 },
+            'blue'   : {'fg':4, 'bg':4 },
+            'magenta': {'fg':5, 'bg':5 },
+            'cyan'   : {'fg':6, 'bg':6 },
+            'white'  : {'fg':7, 'bg':7 },
+        } 
+    w=screen.columns
+    h=screen.lines
+    buffer=""
+    buffer += f'\x1b[0;3{co[fg]["fg"]};4{co[bg]["bg"]}m'
+    for yy in range(h):
+        buffer += f'\x1b[{y+yy};{x}H'
+        #screen.carriage_return()
+        for xx in range(w):
+            if screen.buffer[yy][xx].fg!=fg or screen.buffer[yy][xx].bold!=bold:
+                fg=screen.buffer[yy][xx].fg
+                bold=screen.buffer[yy][xx].bold
+                cc=30
+                if bold:
+                    cc=90
+                buffer += f'\x1b[{co[fg]["fg"]+cc}m'
+            if screen.buffer[yy][xx].bg!=bg or screen.buffer[yy][xx].blink!=blink:
+                bg=screen.buffer[yy][xx].bg
+                blink=screen.buffer[yy][xx].blink
+                cc=40
+                if blink:
+                    cc=100
+                buffer += f'\x1b[{co[bg]["bg"]+cc}m'
+            buffer += screen.buffer[yy][xx].data
+    return buffer
+
 class VidMaker:
     def __init__(self, script_file, resolution, debug):
+        self.backbox=imageSelect.boxDraw()
+        self.logbox=imageSelect.boxDraw()
         self.globals={}
         self.script_file=script_file
         self.basefn0,self.ext= os.path.splitext(script_file)
@@ -61,6 +118,17 @@ class VidMaker:
         else:
             basefn=self.basefn0
             self.resolution=False
+        self.term_size=get_terminal_size()
+        # Create a terminal object.
+        #self.log_terminal = pyte.Terminal()
+        # Create a screen object.
+        col=self.term_size['columns']-8
+        row=int(self.term_size['rows']/2)-2
+        self.log_screen = pyte.Screen(col, row)
+        self.log_screen.mode.add(pyte.modes.LNM)
+        # Create a pyte stream.
+        self.log_stream = pyte.Stream(self.log_screen)
+        self.log_stream.write=self.log_stream.feed
         # Log file
         self.log_file = basefn+".log"
         # Set up logging
@@ -71,6 +139,19 @@ class VidMaker:
         os.makedirs('search', exist_ok=True)
         self.sub_file = self.work_dir+'/'+self.basefn0+".srt"
         self.markdown=mistune.create_markdown(renderer=None)
+
+    def interface(self, decoration=True):
+        buffer=""
+        col=self.term_size['columns']
+        row=self.term_size['rows']
+        if decoration:
+            buffer=self.backbox.draw(1, 1, col, row)
+            buffer += self.logbox.draw(4, int(row/2), col-6, int(row/2) )
+            """ add status key """
+        #display process summary
+        #display log terminal
+        buffer += pyte_render(5, int(row/2)+1, self.log_screen)
+        return buffer
 
     def setup_logging(self, debug):
         """ Create a formatter with color """
@@ -97,19 +178,23 @@ class VidMaker:
         else:
             level=logging.WARNING
 
-
         # Create a file handler for the log file
         file_handler = logging.FileHandler(self.log_file)
         file_handler.setFormatter(log_formatter)
 
         # Create a stream handler for stderr
-        stderr_handler = logging.StreamHandler()
+        stderr_handler = logging.StreamHandler(self.log_stream)
         stderr_handler.setLevel(level)
         stderr_handler.setFormatter(stderr_formatter)
 
         # Configure the root logger with the handlers
         logging.root.handlers = [file_handler, stderr_handler]
         logging.root.setLevel(logging.DEBUG)
+
+    def blit_buffer(self):
+        sys.stdout.write(self.buffer)
+        sys.stdout.flush()
+        self.buffer=""
 
     def pct_to_float(self, percentage_str):
         if type(percentage_str) == str:
@@ -156,6 +241,9 @@ class VidMaker:
             logging.info('-'*sepw)
             logging.info(f"Executing command: {' '.join(command)}")
             #logging.info('-'*sepw)
+            self.buffer += self.interface(decoration=False)
+            self.blit_buffer() 
+ 
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
             for line in process.stdout:
                 logging.debug(line.rstrip('\n'))
@@ -167,8 +255,14 @@ class VidMaker:
             if(process.returncode>0):
                 logging.error(f"Error executing command. ({process.returncode})")
             #logging.debug('-'*sepw)
+            self.buffer += self.interface(decoration=False)
+            self.blit_buffer() 
+ 
             return process
         except Exception as e:
+            self.buffer += self.interface(decoration=False)
+            self.blit_buffer() 
+ 
             logging.error(f"Error executing command: {e}")
 
     def file_exists(self, file_path):
@@ -235,15 +329,28 @@ class VidMaker:
             if ext.lower() in image_types+video_types:
                 for e in image_types+video_types:
                     logging.debug(f"Checking {name}{e}")
+                    self.buffer += self.interface(decoration=False)
+                    self.blit_buffer()
                     if os.path.isfile(f'{name}{e}'):
                         logging.info(f"Found {name}{e}")
+                        self.buffer += self.interface(decoration=False)
+                        self.blit_buffer() 
                         return f'{name}{e}'
             elif ext.lower() in audio_types:
                 for e in audio_types:
                     if os.path.isfile(f'{name}{e}'):
+                        logging.info(f"Found {name}{e}")
+                        self.buffer += self.interface(decoration=False)
+                        self.blit_buffer() 
                         return f'{name}{e}'
             if os.path.isfile(file_path):
+                logging.info(f"Found {file_path}")
+                self.buffer += self.interface(decoration=False)
+                self.blit_buffer() 
                 return file_path
+        logging.warning(f"{file_path} not found")
+        self.buffer += self.interface(decoration=False)
+        self.blit_buffer() 
         return False
 
     def get_missing_file(self, type, file_path, description, script):
@@ -771,28 +878,6 @@ class VidMaker:
                 os.remove(input_file)
                 shutil.move(temp_output_file, input_file)
 
-    def process_renames(self, xmlfile):
-        #FIXME maybe
-        return False
-        def find_elements_and_replace(element, tag_name, replacement_dict):
-            if element.tag == tag_name:
-                element_text = element.text
-                if replacement_dict.get(element.text):
-                    element.text = replacement_dict[element_text]
-            for child in element:
-                find_elements_and_replace(child, tag_name, replacement_dict)
-
-        if len(self.rename)>0:
-            logging.info(f'Renaming {len(self.rename)} media files in {xmlfile}')
-            tree = ET.parse(xmlfile)
-            root = tree.getroot()
-            find_elements_and_replace(root, "FilePath", self.rename)
-            xml_str=ET.tostring(root, encoding='utf-8')
-            with open(xmlfile, 'w') as xml_file:
-                xml_file.write(minidom.parseString(xml_str).toprettyxml(indent='    '))
-            return True
-        return False
-
     def generate_clip(self, clip):
         """
         Generates a video clip based on the provided XML clip data,
@@ -1157,6 +1242,7 @@ class VidMaker:
             config.write(f)
 
     def create(self, check_only):
+        self.buffer="\x1b[0m\x1b[2J"
         config_file=os.path.expanduser("~/.pyVidMaker.conf")
         default_config={
                 'apikeys':{
@@ -1165,28 +1251,42 @@ class VidMaker:
                 'defaults':{
                     'resolution':'1920x1080'}
                 }
+        self.buffer += self.interface()
+        self.blit_buffer() 
         read=self.read_config_file(config_file)
         self.config=self.merge_dict_configs(default_config, read)
         if read != self.config:
             self.write_config_dict(self.config, config_file)
         self.si=SearchImages(self.config, logging)
         xml_file=None
+        self.buffer += self.interface(decoration=False)
+        self.blit_buffer()
         if self.ext.lower()==".md":
             xml_file = self.parse_md_video_script(self.script_file)
+            self.buffer += self.interface(decoration=False)
+            self.blit_buffer()
+ 
         elif self.ext.lower()=='.xml':
             clips, defaults, info = self.parse_xml_video_script(self.script_file)
+            self.buffer += self.interface(decoration=False)
+            self.blit_buffer() 
             if info.get('Title'):
                 self.basefn0=info.get('Title')
                 self.work_dir = self.basefn0+'.work'
             missing=self.check_missing_media(clips)
-            #if self.process_renames(self.script_file):
-            #    logging.info(f'Reloading {self.script_file} after media renames.')
-            #    clips, defaults, info = self.parse_xml_video_script(self.script_file)
-            #    missing=self.check_missing_media(clips)
+            self.buffer += self.interface(decoration=False)
+            self.blit_buffer() 
+ 
             if(missing):
                 logging.error(f'There are {missing} missing media files.')
+                self.buffer += self.interface(decoration=False)
+                self.blit_buffer() 
+     
             else:
                 logging.info(f'Found all media files.')
+                self.buffer += self.interface(decoration=False)
+                self.blit_buffer() 
+ 
                 if not check_only:
                     for clip in clips:
                         self.generate_clip(clip)
