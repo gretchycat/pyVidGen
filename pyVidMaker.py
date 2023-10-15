@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 import os, hashlib, subprocess, logging, colorlog, datetime, glob, shutil, io
 import sys, json, mistune, xml.etree.ElementTree as ET, binascii
-import string, xml.dom.minidom as minidom, pyte, configparser, pydub
+import string, xml.dom.minidom as minidom, pyte, configparser, pydub, re
 from pprint import pprint
 from optparse import OptionParser
 from gtts import gTTS
@@ -21,9 +21,6 @@ def isVideo(filepath):
 
 def isAudio(filepath):
     return os.path.splitext(filepath)[1].lower() in audio_types
-
-def hexdump(v):
-    return binascii.hexlify(v.encode('utf-8')).decode()
 
 def pause():
     print ('[pause]')
@@ -62,26 +59,77 @@ def page_fit(text, max_length):
         result.append(' '.join(current_line))
     return result
 
+def color(color):
+    if type(color)==int:
+        return color
+    co={
+            'black'  : 0, # 'bg':0 },
+            'red'    : 1, #'bg':1 },
+            'green'  : 2, #'bg':2 },
+            'yellow' : 3, #'bg':3 },
+            'brown'  : 3, #'bg':3 },
+            'blue'   : 4, #'bg':4 },
+            'magenta': 5, #'bg':5 },
+            'cyan'   : 6, #'bg':6 },
+            'white'  : 7, #'bg':7 },
+        }
+    if type(color)==str:
+        regex = r'^([A-Fa-f0-9]{6})$'
+        if re.match(regex, color) is not None:
+            color={
+                    'red'  :int(color[0:2], 16),
+                    'green':int(color[2:4], 16),
+                    'blue' :int(color[4:6], 16),
+                  }
+            return color
+        if co.get(color):
+            return co.get(color)
+    return None
+
+def ansicolor(fg=7, bg=0, bold=False, blink=False):
+    if fg=='default':
+        fg=7
+    if bg=='default':
+        bg=None
+    fg=color(fg)
+    bg=color(bg)
+    fgs=""
+    bgs=""
+    if type(fg)==int:
+        fgs=f'38;5;{fg}'
+    elif type(fg)==dict:
+        fgs=f'38;2;{fg["red"]};{fg["green"]};{fg["blue"]}'
+    if type(bg)==int:
+        bgs=f'48;5;{bg}'
+    elif type(bg)==dict:
+        bgs=f'48;2;{bg["red"]};{bg["green"]};{bg["blue"]}'
+    bo, bl="",""
+    if bold:
+        bo='1;'
+    if blink:
+        bl='5;'
+    ansi=""
+    if len(bgs) and len(fgs):
+        ansi=f'{fgs};{bgs}'
+    elif len(bgs):
+        ansi=bgs
+    elif len(fgs):
+        ansi=fgs
+    if len(ansi)>0:
+        return f"\x1b[{bo}{bl}{ansi}m"
+    return ""
+
 def pyte_render(x, y, screen):
     fg='default'
     bg='default'
     bold=False
     blink=False
-    co={
-            'default': {'fg':7, 'bg':0 },
-            'black'  : {'fg':0, 'bg':0 },
-            'red'    : {'fg':1, 'bg':1 },
-            'green'  : {'fg':2, 'bg':2 },
-            'yellow' : {'fg':3, 'bg':3 },
-            'blue'   : {'fg':4, 'bg':4 },
-            'magenta': {'fg':5, 'bg':5 },
-            'cyan'   : {'fg':6, 'bg':6 },
-            'white'  : {'fg':7, 'bg':7 },
-        } 
     w=screen.columns
     h=screen.lines
     buffer=""
-    buffer += f'\x1b[0;3{co[fg]["fg"]};4{co[bg]["bg"]}m'
+
+    buffer += ansicolor(fg, bg, bold=False, blink=blink)
+
     for yy in range(h):
         buffer += f'\x1b[{y+yy};{x}H'
         #screen.carriage_return()
@@ -89,24 +137,46 @@ def pyte_render(x, y, screen):
             if screen.buffer[yy][xx].fg!=fg or screen.buffer[yy][xx].bold!=bold:
                 fg=screen.buffer[yy][xx].fg
                 bold=screen.buffer[yy][xx].bold
-                cc=30
-                if bold:
-                    cc=90
-                buffer += f'\x1b[{co[fg]["fg"]+cc}m'
+                buffer += ansicolor(fg, None, bold=bold)
             if screen.buffer[yy][xx].bg!=bg or screen.buffer[yy][xx].blink!=blink:
                 bg=screen.buffer[yy][xx].bg
                 blink=screen.buffer[yy][xx].blink
-                cc=40
-                if blink:
-                    cc=100
-                buffer += f'\x1b[{co[bg]["bg"]+cc}m'
+                buffer += ansicolor(None, bg, blink=blink)
             buffer += screen.buffer[yy][xx].data
     return buffer
 
+class pyteLogger(logging.Logger):
+    def __init__(self, refresh_class=None):
+        self.refresh_class=refresh_class
+
+    def debug(self, msg, *args, **kwargs):
+        logging.debug(msg, *args, **kwargs)
+        if self.refresh_class: self.refresh_class.refresh()
+
+    def info(self, msg, *args, **kwargs):
+        logging.info(msg, *args, **kwargs)
+        if self.refresh_class: self.refresh_class.refresh()
+
+    def warning(self, msg, *args, **kwargs):
+        logging.warning(msg, *args, **kwargs)
+        if self.refresh_class: self.refresh_class.refresh()
+
+    def error(self, msg, *args, **kwargs):
+        logging.error(msg, *args, **kwargs)
+        if self.refresh_class: self.refresh_class.refresh()
+
+    def critical(self, msg, *args, **kwargs):
+        logging.critical(msg, *args, **kwargs)
+        if self.refresh_class: self.refresh_class.refresh()
+
 class VidMaker:
     def __init__(self, script_file, resolution, debug):
-        self.backbox=imageSelect.boxDraw()
-        self.logbox=imageSelect.boxDraw()
+        self.clips=None
+        self.backbox=imageSelect.boxDraw(style='outside')
+        self.logbox=imageSelect.boxDraw(style='inside')
+        self.statusbox=imageSelect.boxDraw(style='outside', bgColor=234)
+        self.statusbox.tintFrame('#FF0000')
+        print('\x1b[2J')
         self.globals={}
         self.script_file=script_file
         self.basefn0,self.ext= os.path.splitext(script_file)
@@ -119,21 +189,22 @@ class VidMaker:
             basefn=self.basefn0
             self.resolution=False
         self.term_size=get_terminal_size()
-        # Create a terminal object.
-        #self.log_terminal = pyte.Terminal()
-        # Create a screen object.
         col=self.term_size['columns']-8
-        row=int(self.term_size['rows']/2)-2
+        row=int(self.term_size['rows']/2)-1
         self.log_screen = pyte.Screen(col, row)
         self.log_screen.mode.add(pyte.modes.LNM)
+        self.status_screen = pyte.Screen(col-2, row-3)
+        self.status_screen.mode.add(pyte.modes.LNM)
         # Create a pyte stream.
         self.log_stream = pyte.Stream(self.log_screen)
         self.log_stream.write=self.log_stream.feed
+        self.status_stream = pyte.Stream(self.status_screen)
+
         # Log file
         self.log_file = basefn+".log"
-        # Set up logging
+        # Set up logger
         self.debug=debug
-        self.setup_logging(debug)
+        self.setup_logger(debug)
         self.work_dir = self.basefn0+'.work'
         os.makedirs(self.work_dir, exist_ok=True)
         os.makedirs('search', exist_ok=True)
@@ -141,19 +212,85 @@ class VidMaker:
         self.markdown=mistune.create_markdown(renderer=None)
 
     def interface(self, decoration=True):
+        def gotoxy(x, y):
+            return f'\x1b[{y};{x}H'
+
+        def clear():
+            return '\x1b[2J'
+
+        def setbg(c):
+            return ansicolor(None, c)
+
+        def setfg(c):
+            return ansicolor(c, None)
+
+        def print_fn(fn):
+            missing=True
+            buffer=""
+            if self.file_exists(f'{self.work_dir}/{fn}'):
+                #missing=False
+                buffer+=setfg(10)
+            else:
+                buffer+=setfg(9)
+            buffer+=fn
+            return buffer, missing
+
+        def draw_clip(box, x, y, clip):
+            buffer=""
+            buffer+=setbg(box.bgColor)
+            #\buffer+=gotoxy(x, y)
+            out, m=print_fn(clip.get('ClipFileName') or 'no file yet')
+            buffer+=f'{out}\n'
+            buffer+=setfg(7)
+            buffer+=' '*4
+            all_media=clip.get('Media')
+            media_files=[]
+            missing=False
+            if all_media:
+                for media in all_media:
+                    out,m=print_fn(media['FilePath'])
+                    missing=missing or m
+                    media_files.extend([ out ])
+            if missing:
+                buffer+=f"{setfg(15)}, ".join(media_files)
+            return f'{buffer}\n', missing
         buffer=""
         col=self.term_size['columns']
         row=self.term_size['rows']
         if decoration:
-            buffer=self.backbox.draw(1, 1, col, row)
-            buffer += self.logbox.draw(4, int(row/2), col-6, int(row/2) )
-            """ add status key """
+            buffer +=self.backbox.draw(1, 1, col, row)
+            buffer += self.logbox.draw(4, row-self.log_screen.lines-2, col-6, int(row/2)+1 )
+            buffer += self.statusbox.draw(4,2,col-6, row-self.log_screen.lines-4)
         #display process summary
+        sbuf=''
+        if self.clips:
+            n=len(self.clips)
+            i=0
+            if self.clips:
+                for clip in self.clips:
+                    out, missing=draw_clip(self.statusbox, 1, i+1, clip)
+                    i+=1
+                    if missing:
+                        i+=1
+                    sbuf+=out
+
+        self.status_stream.feed(setbg(self.statusbox.bgColor)+gotoxy(1,1)+clear()+sbuf)
+        buffer += ansicolor(None, self.statusbox.bgColor)
+        buffer += pyte_render(6, 3, self.status_screen)
+        buffer += ansicolor(None, 0)
         #display log terminal
-        buffer += pyte_render(5, int(row/2)+1, self.log_screen)
+        buffer += pyte_render(5, row-self.log_screen.lines-1, self.log_screen)
         return buffer
 
-    def setup_logging(self, debug):
+    def refresh(self):
+        self.buffer=self.interface(decoration=False)
+        self.blit_buffer()
+
+    def full_refresh(self):
+        self.buffer=self.interface(decoration=True)
+        self.blit_buffer()
+
+    def setup_logger(self, debug):  #, x. y. screen):
         """ Create a formatter with color """
         stderr_formatter = colorlog.ColoredFormatter(
             '%(log_color)s%(levelname)s:%(reset)s%(message)s',
@@ -187,9 +324,12 @@ class VidMaker:
         stderr_handler.setLevel(level)
         stderr_handler.setFormatter(stderr_formatter)
 
-        # Configure the root logger with the handlers
+        # Configure the root logging with the handlers
         logging.root.handlers = [file_handler, stderr_handler]
         logging.root.setLevel(logging.DEBUG)
+        logging.setLoggerClass(pyteLogger)
+        logging.refresh_class=self
+        logger.refresh_class=self
 
     def blit_buffer(self):
         sys.stdout.write(self.buffer)
@@ -238,32 +378,23 @@ class VidMaker:
             frame=0
             output=""
             sepw=60
-            logging.info('-'*sepw)
-            logging.info(f"Executing command: {' '.join(command)}")
-            #logging.info('-'*sepw)
-            self.buffer += self.interface(decoration=False)
-            self.blit_buffer() 
- 
+            logger.info('-'*sepw)
+            logger.info(f"Executing command: {' '.join(command)}")
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
             for line in process.stdout:
-                logging.debug(line.rstrip('\n'))
+                logger.debug(line.rstrip('\n'))
                 output+=line
                 print(f'{anim[frame%len(anim)]}\x1b[1A')
                 frame+=1
             process.wait()
             process.output=output
             if(process.returncode>0):
-                logging.error(f"Error executing command. ({process.returncode})")
-            #logging.debug('-'*sepw)
-            self.buffer += self.interface(decoration=False)
-            self.blit_buffer() 
- 
+                logger.error(f"Error executing command. ({process.returncode})")
+
             return process
         except Exception as e:
-            self.buffer += self.interface(decoration=False)
-            self.blit_buffer() 
- 
-            logging.error(f"Error executing command: {e}")
+            logger.error(f"Error executing command: {e}")
+            self.blit_buffer()
 
     def file_exists(self, file_path):
         """
@@ -328,64 +459,58 @@ class VidMaker:
             name=os.path.splitext(file_path)[0]
             if ext.lower() in image_types+video_types:
                 for e in image_types+video_types:
-                    logging.debug(f"Checking {name}{e}")
-                    self.buffer += self.interface(decoration=False)
-                    self.blit_buffer()
+                    logger.debug(f"Checking {name}{e}")
                     if os.path.isfile(f'{name}{e}'):
-                        logging.info(f"Found {name}{e}")
-                        self.buffer += self.interface(decoration=False)
-                        self.blit_buffer() 
+                        logger.info(f"Found {name}{e}")
                         return f'{name}{e}'
             elif ext.lower() in audio_types:
                 for e in audio_types:
                     if os.path.isfile(f'{name}{e}'):
-                        logging.info(f"Found {name}{e}")
-                        self.buffer += self.interface(decoration=False)
-                        self.blit_buffer() 
+                        logger.info(f"Found {name}{e}")
                         return f'{name}{e}'
             if os.path.isfile(file_path):
-                logging.info(f"Found {file_path}")
-                self.buffer += self.interface(decoration=False)
-                self.blit_buffer() 
+                logger.info(f"Found {file_path}")
                 return file_path
-        logging.warning(f"{file_path} not found")
-        self.buffer += self.interface(decoration=False)
-        self.blit_buffer() 
+        logger.warning(f"{file_path} not found")
         return False
 
     def get_missing_file(self, type, file_path, description, script):
         copied=""
         if file_path:
-            log=logging.info
+            log=logger.info
             verb="Acquiring"
             log(f"{verb} {type}: {file_path}\n\tDescription: {description}\n\tScript: {script}")
-            if type=="TTS":
+            if type.lower()=="tts":
                 verb="Generated"
                 self.generate_tts_audio_buffer(file_path, script)
-            elif type=="Image":
+            elif type.lower() in ["image", "video"]:
                 verb="Found"
                 while not self.file_exists(file_path):
-                    print('\x1b[2J\x1b[1;1H\x1b[0;44;1m\x1b[0KPlease enter new search terms.\x1b[0m')
-                    print(f'\x1b[0;1;97mScript: \x1b[0;44;93m"{script}"\x1b[0m')
-                    desc=input(f'[\x1b[0;1m{description}\x1b[0m]\n: ')
+                    print('\x1b[2;3H\x1b[97mPlease enter new search terms.')
+                    print(f'\x1b[3;3H\x1b[97mScript: \x1b[93m"{script}"')
+                    desc=input(f'\x1b[4;3H\x1b[97m[{description}]: \x1b[0m'+' '*25+"\x1b[25D")
                     if(desc!=''):
                         description=desc
                     search_dir=f'search/{description.lower()}'[:24]
                     if not self.dir_exists(search_dir):
+                        logger.info(f"Downloading media: '{description}'")
                         self.search_media(description, 20, search_dir)
+                    logger.info(f"Loading media: '{description}'")
                     imgs=imageSelect.imageSelect()
-                    #reset logging
                     for handler in logging.root.handlers[:]:
                         logging.root.removeHandler(handler)
                     copied=imgs.interface(file_path, glob.glob(f'{search_dir}/*'), description[:40])
-                    self.setup_logging(self.debug)
+                    imgs.clear_images()
+                    print('\x1b[2J')
+                    self.setup_logger(self.debug)
                     if copied != file_path:
                         self.rename[file_path]=copied
                         file_path=copied
+                    self.full_refresh()
             missing=0 if self.file_exists(file_path) else 1
             if missing>0:
                 verb="Missing"
-                log=logging.warning
+                log=logger.warning
             log(f"{verb} {type}: {file_path}")
             return missing
         return 0
@@ -415,11 +540,10 @@ class VidMaker:
             ]
             output = subprocess.check_output(command).decode('utf-8')
             json_data = json.loads(output)
-            #pprint(json_data)
             return json_data
         else:
             if(file_path):
-                logging.error(f"Missing File: {file_path}")
+                logger.error(f"Missing File: {file_path}")
         return None
 
     def get_file_duration(self, file_path):
@@ -474,7 +598,7 @@ class VidMaker:
             elif tp=="emphasis":
                 self.generate_md_emphasis(xml, e)
             else:
-                logging.warning(f'Unhandled md data: {tp}')
+                logger.warning(f'Unhandled md data: {tp}')
             #print("  "*level+tp+ ' ' +str(list_created))
             if ch:
                 self.handle_md_children(xml, ch, level+1)
@@ -513,11 +637,15 @@ class VidMaker:
         img_media=None
         tts_media=None
         ttsdelay=0.0
+        if self.globals.get('md_clip_num')==None:
+            self.globals['md_clip_num']=0
+        else:
+            self.globals['md_clip_num']+=1
         if not self.globals['md_clip']:
             self.globals['md_clip']=ET.SubElement(xml, 'Clip')
             self.globals['md_filters']=None
+            ET.SubElement(self.globals['md_clip'], 'ClipFileName').text=f"Clip{self.globals['md_clip_num']:04}.mp4"
             properties=ET.SubElement(self.globals['md_clip'], 'Properties')
-        #TODO     create clip with media:
         if not self.globals['md_filters']:
             #normal:  Video capable media, TTS
             #heading: add text overlay -- Title style
@@ -532,7 +660,7 @@ class VidMaker:
         tts_media=ET.SubElement(self.globals['md_clip'], 'Media')
         tts_media.set("type", "TTS")
         ET.SubElement(tts_media, 'Script').text=f'{text}'
-        ET.SubElement(tts_media, 'FilePath').text=f'{self.generate_temp_filename(text)}.wav'
+        ET.SubElement(tts_media, 'FilePath').text=f'{self.generate_temp_filename(text)}.mp3'
         ET.SubElement(tts_media, 'StartTime').text=f'{ttsdelay}'
         ET.SubElement(tts_media, 'Duration').text=f'-1'
         ET.SubElement(tts_media, 'UseForCC').text=f'True'
@@ -578,7 +706,7 @@ class VidMaker:
             #TODO add drawtext filter for contexts
             #TODO handle contexts
         else:
-            logging.warning('Missing "raw" text')#TODO get a better warning
+            logger.warning('Missing "raw" text')#TODO get a better warning
         return
 
     def generate_md_strong(self, xml, md):
@@ -597,10 +725,10 @@ class VidMaker:
         try:
             file=open(filename,"r")
         except:
-            logging.error(f"cannot open markdown: {filename}")
+            logger.error(f"cannot open markdown: {filename}")
             return
         filetext='\n'.join(file.readlines())
-        logging.info(f"Processing md script")
+        logger.info(f"Processing md script")
         md=self.markdown(filetext)
         xml=ET.Element('VideoScript')
         ET.SubElement(xml, 'Version').text='1'
@@ -674,7 +802,10 @@ class VidMaker:
                     clip_dict[child.tag] = child.text
 
             # Add clip filename metadata
-            clip_dict["ClipFileName"] = self.generate_temp_filename() + ".mp4"
+            if clip_dict.get("FilePath"):
+                clip_dict['ClipFileName'] = clip_dict['FilePath']
+            else:
+                clip_dict["ClipFileName"] = self.generate_temp_filename() + ".mp4"
             media_elements = clip_element.findall(".//Media")
             media_list = []
             for media_element in media_elements:
@@ -688,7 +819,6 @@ class VidMaker:
                     if child.tag=='filters':
                         filters=[]
                         for filter in child:
-                            #pprint(filter)
                             f={}
                             f['type']=filter.attrib['type']
                             for prop in filter:
@@ -698,6 +828,7 @@ class VidMaker:
                 media_list.append(media_dict)
             clip_dict["Media"] = media_list
             clips.append(clip_dict)
+            self.clips=clips
         return clips, global_defaults_dict, info_dict
 
     def fix_durations(self, clips):
@@ -707,9 +838,6 @@ class VidMaker:
             clipLength=0.0
             while passes<2:
                 for media in clip['Media']:
-                    #print('\x1b[1;31m',end='')
-                    #pprint(media)
-                    #print('\x1b[0m',end='')
                     if not media.get('Duration'):
                         media['Duration']=-1
                     if not media.get('StartTime'):
@@ -723,7 +851,7 @@ class VidMaker:
                         else:
                             if media.get('FilePath'):
                                 media['Duration']=self.get_file_duration(self.work_dir+'/'+media['FilePath'])
-                                logging.debug(f'Setting media Duration '+str(media['Duration']))
+                                logger.debug(f'Setting media Duration '+str(media['Duration']))
                                 clipLength=max(float(media['StartTime'])+float(media['Duration']), clipLength)
                     else:
                         clipLength=max(float(media['StartTime'])+float(media['Duration']), clipLength)
@@ -747,7 +875,7 @@ class VidMaker:
                 totalDuration+=clipLength
             #TODO check filter durations too
 
-            logging.debug(f'Setting clip Duration '+str(clip['Duration']))
+            logger.debug(f'Setting clip Duration '+str(clip['Duration']))
         pass
 
     def fix_placement(self, media):
@@ -861,11 +989,11 @@ class VidMaker:
             acodec='copy'
             vcodec='copy'
             if not audio_stream_exists:
-                logging.info(f'Adding a blank audio stream to {input_file}.')
-                acodec='aac'
+                logger.info(f'Adding a blank audio stream to {input_file}.')
+                acodec='mp3'
                 ffmpeg_cmd.extend(['-f', 'lavfi', '-i', 'anullsrc'])
             if not video_stream_exists:
-                logging.info(f'Adding a blank video stream to {input_file}.')
+                logger.info(f'Adding a blank video stream to {input_file}.')
                 vcodec='h264'
                 ffmpeg_cmd.extend(['-f', 'lavfi', '-i', f'color=c=black:s={self.resolution}'])
 
@@ -1031,7 +1159,7 @@ class VidMaker:
                             f'{boxcolor}'\
                             f"bordercolor={self.translate_color(f.get('BorderColor'))}")
                 else:
-                    logging.warning(f"Unknown filter: {f['type']}")
+                    logger.warning(f"Unknown filter: {f['type']}")
             if(len(filter_text)>0):
                 graph.append(f"[{inputs['v'].pop()}]{','.join(filter_text)}[{output}]")
                 inputs['v'].append(output)
@@ -1041,10 +1169,6 @@ class VidMaker:
         def aud_graph(inputs, media):
             graph=[]
             nonlocal a_output_num
-
-            #adelay filter
-            #print("*"*80)
-            #pprint(media)
             adelay=float(media.get('StartTime') or 0.0)
             volume=float(self.pct_to_float(media.get('Volume')))
             #print(f'Volume={volume}  ({media.get("Volume") or "None"}) ')
@@ -1055,7 +1179,6 @@ class VidMaker:
                     f"[{output}]")
             inputs['a'].append(output)
             a_output_num+=1
-
             return ';'.join(graph)
 
         # Add media inputs and generate filter_graph data
@@ -1066,7 +1189,6 @@ class VidMaker:
                     command.extend([
                         "-loop", "1",
                     ])
-
                 command.extend([
                     "-i", self.work_dir+'/'+media["FilePath"],
                 ])
@@ -1078,7 +1200,6 @@ class VidMaker:
                 filter_graph['v'].append(vid_graph(inputs, media))
                 if hasaudio:
                     filter_graph['a'].append(aud_graph(inputs, media))
-
             elif media_type in [ 'Audio', "TTS" ]:
                 command.extend([
                     "-i", self.work_dir+'/'+media["FilePath"],
@@ -1088,7 +1209,7 @@ class VidMaker:
                 filter_graph['a'].append(aud_graph(inputs, media))
             else:
                 # Log a warning for unknown media type
-                logging.warning(f"Warning: Unknown media type encountered in clip: {media}")
+                logger.warning(f"Warning: Unknown media type encountered in clip: {media}")
         #amix the sources in filter_graph['a']
         amix=''
         output=f"a{a_output_num}"
@@ -1114,7 +1235,8 @@ class VidMaker:
         if a_s!="":
             command.extend(['-map', f'[{str(inputs["a"].pop())}]'])
         command.extend(['-c:v', 'h264',
-            '-c:a', 'aac',
+            '-c:a', 'mp3',
+            '-y',
             '-t', str(clip['Duration']),
             self.work_dir+'/'+clip['ClipFileName']
         ])
@@ -1145,10 +1267,6 @@ class VidMaker:
         #FIXME this is not right yet-- add transitions
         command = ['ffmpeg']
         #command.extend(['-framerate', self.fps])
-        stream=0
-        filter_graph_vid=""
-        filter_graph_aud=""
-        time=0.0
         with open(f'{self.work_dir}/clips.list', 'w') as f:
             for clip in clips:
                 f.write(f"file '{clip['ClipFileName']}'\n")
@@ -1157,38 +1275,41 @@ class VidMaker:
         command.extend(['-i', f'{self.work_dir}/clips.list'])
         command.extend(['-y'])
         command.extend(['-c:v', 'copy'])
-        command.extend(['-c:a', 'copy'])
+        command.extend(['-c:a', 'mp3'])
         command.extend([f'nobgm_{output_file}'])
         self.execute_command(command)
+
+        stream=0
+        filter_graph=""
+        time=0.0
         command=['ffmpeg']
-        #return
         command.extend(['-i', 'nobgm_'+output_file])
-        filter_graph_vid+=f'[{stream}:v]'
-        filter_graph_aud+=f'[{stream}:a]'
-        stream+=1
-        time+=self.get_file_duration(f'nobgm_{output_file}')
-        amap='aa'
-        if(stream>0):#use xfade filter for transitions
-            filter_graph_vid+=f'concat=n={stream}:v=1:a=0[vv]'
-            filter_graph_aud+=f'concat=n={stream}:v=0:a=1[aa]'
+        time=self.get_file_duration(f'nobgm_{output_file}')
+        if sub_file:
+            stream+=1
+            command.extend(['-i', sub_file])
+        vmap='0:v'
+        amap='0:a'
         if background_audio_file:
-            loop=True
-            music_volume=0.05
+            stream+=1
+            loop=True   #TODO read from xml
+            music_volume=0.1 #TODO read from xml
             if (loop):
                 command.extend(['-stream_loop', '-1'])
             command.extend(['-i', self.work_dir+'/'+background_audio_file])
-            filter_graph_aud+=f';[{stream}:a]volume={music_volume}[bgm]'
-            filter_graph_aud+=f';[aa][bgm]amix[am]'
+            filter_graph+=f'[v:0]null[vv]'
+            vmap='vv'
+            filter_graph+=f';[{stream}]volume={music_volume}[bgm]'
+            filter_graph+=f';[{amap}][bgm]amerge=inputs=2[am]'
             amap='am'
-        if sub_file:
-            command.extend(['-i', sub_file])
-        command.extend(['-filter_complex', ';'.join([filter_graph_vid, filter_graph_aud])])
-        command.extend(['-map', f'[vv]'])
-        command.extend(['-map', f'[{amap}]'])
+        if len(filter_graph):
+            command.extend(['-filter_complex', filter_graph])
+            command.extend(['-map', f'[{vmap}]'])
+            command.extend(['-map', f'[{amap}]'])
         command.extend(['-y'])
         command.extend(['-t', f'{time}'])
         command.extend(['-c:v', 'h264'])
-        command.extend(['-c:a', 'aac'])
+        command.extend(['-c:a', 'mp3'])
         command.extend(['-pix_fmt', 'yuv420p'])
         #command.extend(['fps', f'{self.fps}'])
         command.extend([output_file])
@@ -1251,42 +1372,26 @@ class VidMaker:
                 'defaults':{
                     'resolution':'1920x1080'}
                 }
-        self.buffer += self.interface()
-        self.blit_buffer() 
+
+        self.full_refresh()
         read=self.read_config_file(config_file)
         self.config=self.merge_dict_configs(default_config, read)
         if read != self.config:
             self.write_config_dict(self.config, config_file)
-        self.si=SearchImages(self.config, logging)
+        self.si=SearchImages(self.config, logger)
         xml_file=None
-        self.buffer += self.interface(decoration=False)
-        self.blit_buffer()
         if self.ext.lower()==".md":
             xml_file = self.parse_md_video_script(self.script_file)
-            self.buffer += self.interface(decoration=False)
-            self.blit_buffer()
- 
         elif self.ext.lower()=='.xml':
             clips, defaults, info = self.parse_xml_video_script(self.script_file)
-            self.buffer += self.interface(decoration=False)
-            self.blit_buffer() 
             if info.get('Title'):
                 self.basefn0=info.get('Title')
                 self.work_dir = self.basefn0+'.work'
             missing=self.check_missing_media(clips)
-            self.buffer += self.interface(decoration=False)
-            self.blit_buffer() 
- 
             if(missing):
-                logging.error(f'There are {missing} missing media files.')
-                self.buffer += self.interface(decoration=False)
-                self.blit_buffer() 
-     
+                logger.error(f'There are {missing} missing media files.')
             else:
-                logging.info(f'Found all media files.')
-                self.buffer += self.interface(decoration=False)
-                self.blit_buffer() 
- 
+                logger.info(f'Found all media files.')
                 if not check_only:
                     for clip in clips:
                         self.generate_clip(clip)
@@ -1294,7 +1399,7 @@ class VidMaker:
                     self.output_file=f'{self.basefn0}.{self.resolution}.mp4'
                     self.join_clips(clips, defaults.get("BackgroundMusic"), self.sub_file, self.output_file)
         else:
-            logging.error(f"Unknown script type: {self.ext.lower()}")
+            logger.error(f"Unknown script type: {self.ext.lower()}")
         return xml_file
 
 def main():
@@ -1311,21 +1416,25 @@ def main():
         parser.print_help()
         return
     morefiles=[]
+    global logger
+    logger=pyteLogger()
     script_file = args[0]
     if options.resolution:
         for rez in options.resolution.split(','):
             vm=VidMaker(script_file, rez.lower(), options.debug)
+            logger=pyteLogger(vm)
             morefiles.append(vm.create(options.check))
         for x in morefiles:
             if type(x)==str:
-                logging.info(f'{x} has been written.')
+                logger.info(f'{x} has been written.')
                 vm=VidMaker(x, False, options.debug)
                 vm.create(options.check)
     else:
         vm=VidMaker(script_file, False, options.debug)
+        logger=pyteLogger(vm)
         more=vm.create(options.check)
         if type(more)==str:
-            logging.info(f'{more} has been written.')
+            logger.info(f'{more} has been written.')
             vm=VidMaker(more, False, options.debug)
             vm.create(options.check)
 
