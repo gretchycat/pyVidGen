@@ -446,6 +446,7 @@ class VidMaker:
         Checks if a file exists at the given file path.
         Returns True if it exists, False otherwise.
         """
+        #return self.update_type(file_path)
         if file_path:
             if os.path.isfile(file_path):
                 return True
@@ -463,27 +464,31 @@ class VidMaker:
         and saves it to the specified audio buffer file.
         """
         #TODO Add Mozilla TTS and pyTTS
+        audio_buffer_file=os.path.splitext(audio_buffer_file)[0]+'.mp3'
         if not self.file_exists(audio_buffer_file):
             if voice=='gtts':
                 tts = gTTS(text_content, lang=lang, tld=tld, slow=False)
                 # Adjust speed and pitch if necessary
                     # Modify the speech with pydub
-                if speed != 1.0 or pitch != 1.0 and False:
-                    audio = pydub.AudioSegment.from_mp3(io.BytesIO(tts.save_to_buffer(format="mp3").getvalue()))
+                speed=1.2
+                if speed != 1.0 or pitch != 1.0 or True:
+                    buffer=io.BytesIO()
+                    tts.write_to_fp(buffer)
+                    buffer.seek(0)
+                    audio = pydub.AudioSegment.from_mp3(buffer)
+                    audio = audio.set_frame_rate(48000)
+                    audio = audio.set_channels(2)
+                    #audio = audio.set_balance(0)
                     if speed!=1.0:
-                        pass
-                        #audio = audio.speedup(playback_speed=speed).set_frame_rate(audio.frame_rate)
+                        audio = audio.speedup(playback_speed=speed)
                     if pitch != 1.0:
                         pass
                         #audio = audio.set_frame_rate(int(audio.frame_rate * pitch))
                     # Export the modified audio to the specified file
-                    audio.export(audio_buffer_file)
+                    audio.export(audio_buffer_file, format='mp3', bitrate='192k')
                 else:
                     # Save the original audio to the specified file
                     tts.save(audio_buffer_file)
-            else:
-                tts = gTTS(text_content, lang=lang, tld=tld, slow=False)
-                tts.save(audio_buffer_file)
 
     def dir_exists(self, file_path):
         """
@@ -546,13 +551,13 @@ class VidMaker:
                         logging.root.removeHandler(handler)
                     copied=imgs.interface(file_path, glob.glob(f'{search_dir}/*'), description[:40])
                     imgs.clear_images()
-                    print('\x1b[2J')
+                    clear()
                     self.setup_logger(self.debug)
                     if copied != file_path:
                         self.rename[file_path]=copied
                         file_path=copied
                     self.full_refresh()
-            missing=0 if self.file_exists(file_path) else 1
+            missing=0 if self.file_exists(self.update_type(file_path)) else 1
             if missing>0:
                 verb="Missing"
                 log=logger.warning
