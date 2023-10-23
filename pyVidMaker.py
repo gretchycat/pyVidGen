@@ -2,6 +2,7 @@
 import sys, hashlib, subprocess, logging, colorlog, datetime, glob, shutil, io
 import os, json, mistune, xml.etree.ElementTree as ET, binascii, fcntl, termios
 import string, xml.dom.minidom as minidom, pyte, configparser, pydub, re, array
+from termcontrol import termcontrol
 from pprint import pprint
 from optparse import OptionParser
 from gtts import gTTS
@@ -21,18 +22,6 @@ def isVideo(filepath):
 
 def isAudio(filepath):
     return os.path.splitext(filepath)[1].lower() in audio_types
-
-def get_terminal_size():
-    buf = array.array('H', [0, 0, 0, 0])
-    fcntl.ioctl(sys.stdout, termios.TIOCGWINSZ, buf)
-    # Create a dictionary with meaningful keys
-    window_info = {
-        "rows": buf[0],
-        "columns": buf[1],
-        "width": buf[2],
-        "height": buf[3]
-    }
-    return window_info
 
 def page_fit(text, max_length):
     # Split the text into words
@@ -54,142 +43,9 @@ def page_fit(text, max_length):
         result.append(' '.join(current_line))
     return result
 
-def color(color):
-    if type(color)==int:
-        return color
-    co={
-            'black'  : 0, # 'bg':0 },
-            'red'    : 1, #'bg':1 },
-            'green'  : 2, #'bg':2 },
-            'yellow' : 3, #'bg':3 },
-            'brown'  : 3, #'bg':3 },
-            'blue'   : 4, #'bg':4 },
-            'magenta': 5, #'bg':5 },
-            'cyan'   : 6, #'bg':6 },
-            'white'  : 7, #'bg':7 },
-            'brightblack'  : 8,
-            'brightred'    : 9,
-            'brightgreen'  : 10,
-            'brightbrown'  : 11,
-            'brightblue'   : 12,
-            'brightmagenta': 13,
-            'brightcyan'   : 14,
-            'brightwhite'  : 15,
-        }
-    if type(color)==str:
-        regex = r'^([A-Fa-f0-9]{6})$'
-        if re.match(regex, color) is not None:
-            color={
-                    'red'  :int(color[0:2], 16),
-                    'green':int(color[2:4], 16),
-                    'blue' :int(color[4:6], 16),
-                  }
-            return color
-        if co.get(color):
-            return co.get(color)
-    return None
-
-def ansicolor(fg=7, bg=0, bold=False, blink=False):
-    if fg=='default':
-        fg=7
-    if bg=='default':
-        bg=None
-    fg=color(fg)
-    bg=color(bg)
-    fgs=""
-    bgs=""
-    if type(fg)==int:
-        fgs=f'38;5;{fg}'
-    elif type(fg)==dict:
-        fgs=f'38;2;{fg["red"]};{fg["green"]};{fg["blue"]}'
-    if type(bg)==int:
-        bgs=f'48;5;{bg}'
-    elif type(bg)==dict:
-        bgs=f'48;2;{bg["red"]};{bg["green"]};{bg["blue"]}'
-    bo, bl="",""
-    if bold:
-        bo='1;'
-    if blink:
-        bl='5;'
-    ansi=""
-    if len(bgs) and len(fgs):
-        ansi=f'{fgs};{bgs}'
-    elif len(bgs):
-        ansi=bgs
-    elif len(fgs):
-        ansi=fgs
-    if len(ansi)>0:
-        return f"\x1b[{bo}{bl}{ansi}m"
-    return ""
-
-def gotoxy(x, y):
-    return f'\x1b[{y};{x}H'
-
-def clear():
-    return '\x1b[2J'
-
-def setbg(c):
-    return ansicolor(None, c)
-
-def setfg(c):
-    return ansicolor(c, None)
-
-def pyte_render(x, y, screen, line=1):
-    fg='default'
-    bg='default'
-    bold=False
-    blink=False
-    w=screen.columns
-    h=screen.screen_lines
-    start_line=line-1
-    if start_line<0:
-        start_line=int(screen.cursor.y-h+2)
-    if start_line<0:
-        start_line=0
-    if start_line>int(screen.cursor.y-h+2):
-        start_line=int(screen.cursor.y-h+2)
-    buffer = ansicolor(fg, bg, bold=False, blink=blink)
-    for yy in range(start_line, start_line+h):
-        buffer += gotoxy(x, y+yy-(start_line))
-        for xx in range(w):
-            if screen.buffer[yy][xx].fg!=fg or screen.buffer[yy][xx].bold!=bold:
-                fg=screen.buffer[yy][xx].fg
-                bold=screen.buffer[yy][xx].bold
-                buffer += ansicolor(fg, None, bold=bold)
-            if screen.buffer[yy][xx].bg!=bg or screen.buffer[yy][xx].blink!=blink:
-                bg=screen.buffer[yy][xx].bg
-                blink=screen.buffer[yy][xx].blink
-                buffer += ansicolor(None, bg, blink=blink)
-            buffer += screen.buffer[yy][xx].data
-    return buffer
-
-class pyteLogger(logging.Logger):
-    def __init__(self, refresh_class=None):
-        self.refresh_class=refresh_class
-
-    def debug(self, msg, *args, **kwargs):
-        logging.debug(msg, *args, **kwargs)
-        if self.refresh_class: self.refresh_class.refresh()
-
-    def info(self, msg, *args, **kwargs):
-        logging.info(msg, *args, **kwargs)
-        if self.refresh_class: self.refresh_class.refresh()
-
-    def warning(self, msg, *args, **kwargs):
-        logging.warning(msg, *args, **kwargs)
-        if self.refresh_class: self.refresh_class.refresh()
-
-    def error(self, msg, *args, **kwargs):
-        logging.error(msg, *args, **kwargs)
-        if self.refresh_class: self.refresh_class.refresh()
-
-    def critical(self, msg, *args, **kwargs):
-        logging.critical(msg, *args, **kwargs)
-        if self.refresh_class: self.refresh_class.refresh()
-        exit()
-
 class VidMaker:
     def __init__(self, script_file, resolution, debug):
+        self.t=termcontrol()
         self.clips=None
         self.backbox=imageSelect.boxDraw(style='outside')
         self.statusbox=imageSelect.boxDraw(style='outside', bgColor=234)
@@ -206,7 +62,7 @@ class VidMaker:
         else:
             basefn=self.basefn0
             self.resolution=False
-        self.term_size=get_terminal_size()
+        self.term_size=self.t.get_terminal_size()
         col=self.term_size['columns']
         row=self.term_size['rows']
         sts_col=col-(4*2)
@@ -224,7 +80,7 @@ class VidMaker:
         self.log_stream = pyte.Stream(self.log_screen)
         self.log_stream.write=self.log_stream.feed
         self.status_stream = pyte.Stream(self.status_screen)
-        self.res=get_terminal_size()
+        self.res=self.t.get_terminal_size()
         self.resize()
         # Log file
         self.log_file = basefn+".log"
@@ -238,8 +94,8 @@ class VidMaker:
         self.markdown=mistune.create_markdown(renderer=None)
 
     def resize(self):
-        if self.res!=get_terminal_size():
-            self.res=get_terminal_size()
+        if self.res!=self.t.get_terminal_size():
+            self.res=self.t.get_terminal_size()
             col=self.term_size['columns']
             row=self.term_size['rows']
             sts_col=col-(4*2)
@@ -259,18 +115,19 @@ class VidMaker:
             buffer=""
             if self.file_exists(f'{self.work_dir}/{fn}'):
                 missing=False
-                buffer+=setfg(10)
+                buffer+=self.t.setfg(10)
             else:
-                buffer+=setfg(9)
+                buffer+=self.t.setfg(9)
             buffer+=fn
             return buffer, missing
 
         def draw_clip(box, clip):
             buffer=""
-            buffer+=setbg(box.bgColor)
-            out, missingClip=print_fn(clip.get('FilePath') or 'no file yet')
+            buffer+=self.t.setbg(box.bgColor)
+            clipFile=os.path.splitext(clip['FilePath'])[0]+'.'+self.resolution+'.mp4'
+            out, missingClip=print_fn(clipFile)
             buffer+=f'{out}\n'
-            buffer+=setfg(7)
+            buffer+=self.t.setfg(7)
             buffer+=' '*4
             all_media=clip.get('Media')
             media_files=[]
@@ -281,7 +138,7 @@ class VidMaker:
                     missing=missing or m
                     media_files.extend([ out ])
             if missing or True:
-                buffer+=f"{setfg(15)}, ".join(media_files)
+                buffer+=f"{self.t.setfg(15)}, ".join(media_files)
             return f'{buffer}\n', missing, missingClip
         buffer=""
         col=self.term_size['columns']
@@ -292,7 +149,7 @@ class VidMaker:
         #display process summary
         first_missing_clip=None
         first_missing_media=None
-        self.status_stream.feed(setbg(self.statusbox.bgColor)+gotoxy(1,1)+clear())
+        self.status_stream.feed(self.t.setbg(self.statusbox.bgColor)+self.t.gotoxy(1,1)+self.t.clear())
         if self.clips:
             n=len(self.clips)
             if self.clips:
@@ -314,11 +171,11 @@ class VidMaker:
             line=cursor[1]-int(self.status_screen.screen_lines/2)
         if line<1:
             line=1
-        buffer += ansicolor(None, self.statusbox.bgColor)
-        buffer += pyte_render(5, 3, self.status_screen, line)
+        buffer += self.t.ansicolor(None, self.statusbox.bgColor)
+        buffer += self.t.pyte_render(5, 3, self.status_screen, line)
         #display log terminal
-        buffer += ansicolor(None, 0)
-        buffer += pyte_render(1, int(self.status_screen.screen_lines+(2*2)+1), self.log_screen)
+        buffer += self.t.ansicolor(None, 0)
+        buffer += self.t.pyte_render(1, int(self.status_screen.screen_lines+(2*2)+1), self.log_screen)
         return buffer
 
     def refresh(self):
@@ -366,7 +223,7 @@ class VidMaker:
         # Configure the root logging with the handlers
         logging.root.handlers = [file_handler, stderr_handler]
         logging.root.setLevel(logging.DEBUG)
-        logging.setLoggerClass(pyteLogger)
+        logging.setLoggerClass(self.t.pyteLogger)
         logging.refresh_class=self
         logger.refresh_class=self
 
@@ -422,13 +279,13 @@ class VidMaker:
             logger.info(f"Executing command: {' '.join(command)}")
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
             outbuffer=''
-            ts=get_terminal_size()
+            ts=self.t.get_terminal_size()
             x,y=int(ts['columns']/2),int(ts['rows']/4*3)
             for line in process.stdout:
                 logger.debug(line.rstrip('\n'))
                 output+=line
                 outbuffer+=line
-                print(f'{gotoxy(x,y)}{ansicolor(15,0)}{anim[int(frame)%len(anim)]}{gotoxy(int(ts["columns"]), int(ts["rows"])-1)}')
+                print(f'{self.t.gotoxy(x,y)}{self.t.ansicolor(15,0)}{anim[int(frame)%len(anim)]}{self.t.gotoxy(int(ts["columns"]), int(ts["rows"])-1)}')
                 frame+=0.2
             process.wait()
             process.output=output
@@ -550,8 +407,8 @@ class VidMaker:
                     for handler in logging.root.handlers[:]:
                         logging.root.removeHandler(handler)
                     copied=imgs.interface(file_path, glob.glob(f'{search_dir}/*'), description[:40])
-                    imgs.clear_images()
-                    clear()
+                    self.t.clear_images()
+                    self.t.clear()
                     self.setup_logger(self.debug)
                     if copied != file_path:
                         self.rename[file_path]=copied
@@ -1070,24 +927,6 @@ class VidMaker:
         Generates a video clip based on the provided XML clip data,
         handling the positioning and timing of media elements within the clip.
         """
-        command = ['ffmpeg']
-        filter_graph={"v":[], "a":[]}
-        inputs={"v":[], "a":[]}
-        v_output_num=0
-        a_output_num=0
-        # Add background color input
-        stream_num=0
-        if not self.resolution:
-            self.resolution='1920x1080'
-        self.xres, self.yres=map(int, self.resolution.split('x'))
-        command.extend(['-f', 'lavfi', '-i', f'color={self.translate_color(clip["BackgroundColor"])}:size={self.resolution}:duration={clip["Duration"]}'])
-        inputs['v'].append(f"{stream_num}:v")
-
-        #Add blank Audio (set the format)
-        stream_num+=1
-        command.extend(['-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate=44100:duration={clip["Duration"]}'])
-        inputs['a'].append(f"{stream_num}:a")
-
         def swap(list):
             list[-1], list[-2] = list[-2], list[-1]
 
@@ -1240,6 +1079,24 @@ class VidMaker:
             a_output_num+=1
             return ';'.join(graph)
 
+        command = ['ffmpeg']
+        filter_graph={"v":[], "a":[]}
+        inputs={"v":[], "a":[]}
+        v_output_num=0
+        a_output_num=0
+        # Add background color input
+        stream_num=0
+        if not self.resolution:
+            self.resolution='1920x1080'
+        self.xres, self.yres=map(int, self.resolution.split('x'))
+        command.extend(['-f', 'lavfi', '-i', f'color={self.translate_color(clip["BackgroundColor"])}:size={self.resolution}:duration={clip["Duration"]}'])
+        inputs['v'].append(f"{stream_num}:v")
+
+        #Add blank Audio (set the format)
+        stream_num+=1
+        command.extend(['-f', 'lavfi', '-i', f'anullsrc=channel_layout=stereo:sample_rate=44100:duration={clip["Duration"]}'])
+        inputs['a'].append(f"{stream_num}:a")
+
         # Add media inputs and generate filter_graph data
         for media in clip['Media']:
             media_type = media['MediaType']
@@ -1287,7 +1144,7 @@ class VidMaker:
             filter_graph_str=';'.join([v_s, a_s])
         else:
             filter_graph_str=f"{v_s}{a_s}"
-
+        clipFile=os.path.splitext(clip['FilePath'])[0]+'.'+self.resolution+'.mp4'
         command.extend(['-filter_complex', filter_graph_str])
         if v_s!="":
             command.extend(['-map', f'[{str(inputs["v"].pop())}]'])
@@ -1297,11 +1154,11 @@ class VidMaker:
             '-c:a', 'mp3',
             '-y',
             '-t', str(round(clip['Duration'], 3)),
-            self.work_dir+'/'+clip['FilePath']
+            self.work_dir+'/'+clipFile
         ])
-        if not self.file_exists( self.work_dir+'/'+clip['FilePath']):
+        if not self.file_exists( self.work_dir+'/'+clipFile):
             self.execute_command(command)
-            self.add_missing_streams(self.work_dir+'/'+clip['FilePath'])
+            self.add_missing_streams(self.work_dir+'/'+clipFile)
 
     def generate_srt(self, clips, filename):
         #FIXME times are wrong
@@ -1328,7 +1185,8 @@ class VidMaker:
         #command.extend(['-framerate', self.fps])
         with open(f'{self.work_dir}/clips.list', 'w') as f:
             for clip in clips:
-                f.write(f"file '{clip['FilePath']}'\n")
+                clipFile=os.path.splitext(clip['FilePath'])[0]+'.'+self.resolution+'.mp4'
+                f.write(f"file '{clipFile}'\n")
             f.close()
         command.extend(['-f', 'concat'])
         command.extend(['-i', f'{self.work_dir}/clips.list'])
@@ -1476,12 +1334,12 @@ def main():
         return
     morefiles=[]
     global logger
-    logger=pyteLogger()
+    logger=termcontrol.pyteLogger()
     script_file = args[0]
     if options.resolution:
         for rez in options.resolution.split(','):
             vm=VidMaker(script_file, rez.lower(), options.debug)
-            logger=pyteLogger(vm)
+            logger=self.t.pyteLogger(vm)
             morefiles.append(vm.create(options.check))
         for x in morefiles:
             if type(x)==str:
@@ -1490,7 +1348,7 @@ def main():
                 vm.create(options.check)
     else:
         vm=VidMaker(script_file, False, options.debug)
-        logger=pyteLogger(vm)
+        logger=termcontrol.pyteLogger(vm)
         more=vm.create(options.check)
         if type(more)==str:
             logger.info(f'{more} has been written.')
