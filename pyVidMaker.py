@@ -47,8 +47,8 @@ class VidMaker:
     def __init__(self, script_file, resolution, debug):
         self.t=termcontrol()
         self.clips=None
-        self.backbox=imageSelect.boxDraw(style='outside')
-        self.statusbox=imageSelect.boxDraw(style='outside', bgColor=234)
+        self.backbox=self.t.boxDraw(style='outside')
+        self.statusbox=self.t.boxDraw(style='outside', bgColor=234)
         self.statusbox.tintFrame('#FF0000')
         print('\x1b[2J')
         self.globals={}
