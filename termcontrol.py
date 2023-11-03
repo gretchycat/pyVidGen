@@ -43,7 +43,6 @@ theme['inside']={
         'BL': 'TH', 'BC': 'TH', 'BR': 'TH'
         }
 
-
 theme['outside']={
         'TL': 'B100', 'TC': 'TH', 'TR': 'B100',
         'ML': 'B100', 'MC': 'B0', 'MR': 'B100',
@@ -82,7 +81,7 @@ class termcontrol:
 
     def enable_cursor(self):
         return "\x1b[?25h"
- 
+
     def disable_cursor(self):
         return "\x1b[?25l"
 
@@ -196,7 +195,15 @@ class termcontrol:
             return self.x11_colors.get(color)
         return None
 
-    def ansicolor(self, fg=7, bg=None, 
+    def getRGB(self, c):
+        color=self.color(c)
+        if type(color)==dict:
+            return color
+        if type(color)==int:
+            pass #FIXME
+        return {'red':127, 'green':127, 'blue':127}
+
+    def ansicolor(self, fg=7, bg=None,
                   bold=False, dim=False, italic=False, underline=False,
                   strike=False, blink=False, blink2=False, reverse=False):
         if fg=='default':
@@ -246,9 +253,15 @@ class termcontrol:
             return f"\x1b[{bo}{dm}{it}{ul}{bl}{bl2}{rv}{ansi}m"
         return ""
 
-    def pyte_render(self, x, y, screen, line=1):
-        fg='default'
-        bg='default'
+    def drawRuler(self,w,h):
+        buffer=''
+        for y in range(0,h):
+            for x in range(0,int((w)/10)):
+                buffer+=self.gotoxy(x*10+1,y)
+                buffer+=f'({x*10+1},{y})'
+        return buffer
+
+    def pyte_render(self, x, y, screen, line=1, fg='default', bg='default', fg0='default', bg0='default'):
         bold=False
         blink=False
         w=screen.columns
@@ -260,9 +273,11 @@ class termcontrol:
             start_line=0
         if start_line>int(screen.cursor.y-h+2):
             start_line=int(screen.cursor.y-h+2)
-        buffer = self.ansicolor(fg, bg, bold=False, blink=blink)
+        buffer = self.ansicolor(fg, bg, bold=bold, blink=blink)
+        screen.cursor_position(screen.screen_lines+start_line, 1)
         for yy in range(start_line, start_line+h):
             buffer += self.gotoxy(x, y+yy-(start_line))
+            buffer+=self.ansicolor(fg, bg)
             for xx in range(w):
                 if screen.buffer[yy][xx].fg!=fg or screen.buffer[yy][xx].bold!=bold:
                     fg=screen.buffer[yy][xx].fg
@@ -273,19 +288,35 @@ class termcontrol:
                     blink=screen.buffer[yy][xx].blink
                     buffer += self.ansicolor(None, bg, blink=blink)
                 buffer += screen.buffer[yy][xx].data
+            buffer+=self.ansicolor(fg0, bg0)
         return buffer
 
     def gotoxy(self, x, y):
-        return f'\x1b[{int(y)};{int(x)}H'
+        return f'\x1b[{int(y)};{int(x)}f'
 
     def clear(self):
         return '\x1b[2J'
+
+    def reset(self):
+        return '\x1b[0m'
 
     def setbg(self, c):
         return self.ansicolor(None, c)
 
     def setfg(self, c):
         return self.ansicolor(c, None)
+
+    def up(self, n):
+        return f'\x1b[{n}A'
+
+    def down(self, n):
+        return f'\x1b[{n}B'
+
+    def left(self, n):
+        return f'\x1b[{n}D'
+
+    def right(self, n):
+        return f'\x1b[{n}C'
 
     def clear_images(self):
         out=''
@@ -317,220 +348,374 @@ class termcontrol:
             self.img_cache[image]=ic.print(image)
         return f'{start_pos}{self.img_cache[image]}{desc}'
 
-    class pyteLogger(logging.Logger):
-        def __init__(self, refresh_class=None):
-            self.refresh_class=refresh_class
+class pyteLogger(logging.Logger):
+    def __init__(self, refresh_class=None):
+        logging.__init__('pyte')
+        self.refresh_class=refresh_class
 
-        def debug(self, msg, *args, **kwargs):
-            logging.debug(msg, *args, **kwargs)
-            if self.refresh_class: self.refresh_class.refresh()
+    def debug(self, msg, *args, **kwargs):
+        logging.debug(msg, *args, **kwargs)
+        if self.refresh_class: self.refresh_class.refresh()
 
-        def info(self, msg, *args, **kwargs):
-            logging.info(msg, *args, **kwargs)
-            if self.refresh_class: self.refresh_class.refresh()
+    def info(self, msg, *args, **kwargs):
+        logging.info(msg, *args, **kwargs)
+        if self.refresh_class: self.refresh_class.refresh()
 
-        def warning(self, msg, *args, **kwargs):
-            logging.warning(msg, *args, **kwargs)
-            if self.refresh_class: self.refresh_class.refresh()
+    def warning(self, msg, *args, **kwargs):
+        logging.warning(msg, *args, **kwargs)
+        if self.refresh_class: self.refresh_class.refresh()
 
-        def error(self, msg, *args, **kwargs):
-            logging.error(msg, *args, **kwargs)
-            if self.refresh_class: self.refresh_class.refresh()
+    def error(self, msg, *args, **kwargs):
+        logging.error(msg, *args, **kwargs)
+        if self.refresh_class: self.refresh_class.refresh()
 
-        def critical(self, msg, *args, **kwargs):
-            logging.critical(msg, *args, **kwargs)
-            if self.refresh_class: self.refresh_class.refresh()
-            exit()
+    def critical(self, msg, *args, **kwargs):
+        logging.critical(msg, *args, **kwargs)
+        if self.refresh_class: self.refresh_class.refresh()
+        exit()
 
-    class boxDraw:
-        def __init__(self, bgColor=24,
-                    chars="",
-                    frameColors=[],
-                    title="", statusBar='',
-                    mode='auto', charset='utf8',
-                    style='inside'):
-            self.bgColor=bgColor
-            if len(chars)!=9:
+class boxDraw:
+    def __init__(self, bgColor=24,
+                bg0=0, fg0=7,
+                chars="",
+                frameColors=[],
+                title="", statusBar='',
+                mode='auto', charset='utf8',
+                style='inside',
+                ):
+        self.term=termcontrol()
+        self.fg0, self.bg0=fg0, bg0
+        self.bgColor=bgColor
+        if len(chars)!=9:
+            cd=grchr['utf8']
+            if charset.lower() in ['utf8', 'utf-8']:
                 cd=grchr['utf8']
-                if charset.lower() in ['utf8', 'utf-8']:
-                    cd=grchr['utf8']
-                else:
-                    cd=grchr['ascii']
-                self.chars=f'{cd[theme[style]["TL"]]}{cd[theme[style]["TC"]]}{cd[theme[style]["TR"]]}'\
-                            f'{cd[theme[style]["ML"]]}{cd[theme[style]["MC"]]}{cd[theme[style]["MR"]]}'\
-                            f'{cd[theme[style]["BL"]]}{cd[theme[style]["BC"]]}{cd[theme[style]["BR"]]}'
             else:
-                self.chars=chars
-            fr=False
-            if len(frameColors)!=9:
-                fr=True
-            if mode in ['sixel', 'kitty', '24bit', '24-bit', 'auto']:
-                if fr:
-                    self.frameColors=['#FFF', '#AAA','#777','#AAA', 0, '#555', '#777','#555','#333']
-                if type(bgColor)==int and bgColor>255:
-                    self.bgColor=0
-                else:
-                    self.bgColor=bgColor
-            elif mode in ['8bit', '8-bit', '256color', '8bitgrey', 'grey', '8bitbright']:
-                if fr:
-                    self.frameColors=[255, 245, 240, 245, 0, 237, 240, 237, 235]
-                if type(bgColor)!=int or bgColor>255:
-                    self.bgColor=0
-                else:
-                    self.bgColor=bgColor
-            elif mode in ['4bit', '4-bit', '16color', '4bitgrey']:
-                if fr:
-                    self.frameColors=[15, 7, 8, 7, 0, 8, 7, 8, 0]
-                if type(bgColor)!=int or bgColor>15:
-                    self.bgColor=0
-                else:
-                    self.bgColor=bgColor
-            else:
-                if fr:
-                    self.frameColors=[7, 7, 7, 7, 0, 7, 7, 7, 7]
-                self.bgColor=0
-            self.tinted=None
-            self.title=title
-            self.statusBar=statusBar
-
-        def setColors(self, bgcolor, frameColors):
-            self.bgColor=bgColor
-            self.frameColors=frameColors
-
-        def tintFrame(self, color):
-            r,g,b=self.getRGB(color)
-            r=r/255.0
-            g=g/255.0
-            b=b/255.0
-            self.tinted=[]
-            for i in range(0, len(self.frameColors)):
-                fr,fg,fb=self.getRGB(self.frameColors[i])
-                fr=int(fr/16*r)
-                fg=int(fg/16*g)
-                fb=int(fb/16*b)
-                self.tinted.append(F"#{fr:X}{fg:X}{fb:X}")
-
-        def unTintFrame(self):
-            self.tinted=None
-
-        def setCharacters(self):
+                cd=grchr['ascii']
+            self.chars=f'{cd[theme[style]["TL"]]}{cd[theme[style]["TC"]]}{cd[theme[style]["TR"]]}'\
+                        f'{cd[theme[style]["ML"]]}{cd[theme[style]["MC"]]}{cd[theme[style]["MR"]]}'\
+                        f'{cd[theme[style]["BL"]]}{cd[theme[style]["BC"]]}{cd[theme[style]["BR"]]}'
+        else:
             self.chars=chars
+        fr=False
+        if len(frameColors)!=9:
+            fr=True
+        if mode in ['sixel', 'kitty', '24bit', '24-bit', 'auto']:
+            if fr:
+                self.frameColors=['#FFF', '#AAA','#777','#AAA', 0, '#555', '#777','#555','#333']
+            if type(bgColor)==int and bgColor>255:
+                self.bgColor=0
+            else:
+                self.bgColor=bgColor
+        elif mode in ['8bit', '8-bit', '256color', '8bitgrey', 'grey', '8bitbright']:
+            if fr:
+                self.frameColors=[255, 245, 240, 245, 0, 237, 240, 237, 235]
+            if type(bgColor)!=int or bgColor>255:
+                self.bgColor=0
+            else:
+                self.bgColor=bgColor
+        elif mode in ['4bit', '4-bit', '16color', '4bitgrey']:
+            if fr:
+                self.frameColors=[15, 7, 8, 7, 0, 8, 7, 8, 0]
+            if type(bgColor)!=int or bgColor>15:
+                self.bgColor=0
+            else:
+                self.bgColor=bgColor
+        else:
+            if fr:
+                self.frameColors=[7, 7, 7, 7, 0, 7, 7, 7, 7]
+            self.bgColor=0
+        self.tinted=None
+        self.title=title
+        self.statusBar=statusBar
 
-        def draw(self, x, y, w, h, fill=True):
-            if(w<3): w=3
-            if(h<3): h=3
-            colors=self.frameColors
-            if(self.tinted):
-                colors=self.tinted
-            buff=self.move(x,y)+\
-                self.color(colors[0], self.bgColor)+self.chars[0]+\
-                self.color(colors[1], self.bgColor)+self.chars[1]*(w-2)+\
-                self.color(colors[2], self.bgColor)+self.chars[2]
-            for i in range(1,h-1):
-                buff+=self.move(x,y+i)+\
-                    self.color(colors[3], self.bgColor)+self.chars[3]
-                if(fill):
-                    buff+=self.color(colors[4], self.bgColor)+self.chars[4]*(w-2)
-                else:
-                    iw=w-2
-                    buff+=F"\x1b[{iw}C"
-                buff+=self.color(colors[5], self.bgColor)+self.chars[5]
-            buff+=self.move(x,y+h-1)+\
-                self.color(colors[6], self.bgColor)+self.chars[6]+\
-                self.color(colors[7], self.bgColor)+self.chars[7]*(w-2)+\
-                self.color(colors[8], self.bgColor)+self.chars[8]+"\x1b[0m"
-            if self.title!='':
-                desc=self.title
-                descX=int(x+(w/2)-(len(desc)/2))+1
-                descY=int(y)
-                descPos=self.move(descX, descY)
-                descColor=self.color(16, colors[1])
-                buff+=f'{descPos}{descColor}{desc}\n'
-            if self.statusBar!='':
-                pass
-            return buff
+    def setColors(self, bgcolor, frameColors):
+        self.bgColor=bgColor
+        self.frameColors=frameColors
 
-    class termKeyboard:
-        def __init__(self):
-            self.keymap={ "\x1b[A":"Up", "\x1b[B":"Down",\
-                     "\x1b[C":"Right", "\x1b[D":"Left",\
-                     "\x7f":"Backspace", "\x09":"Tab",\
-                     "\x0a":"Enter", "\x1b\x1b":"Esc",\
-                     "\x1b[H":"Home", "\x1b[F":"End",\
-                     "\x1b[5~":"PgUp", "\x1b[6~":"PgDn",\
-                     "\x1b[2~":"Ins", "\x1b[3~":"Del",\
-                     "\x1bOP":"F1", "\x1bOQ":"F2",\
-                     "\x1bOR":"F3", "\x1bOS":"F4",\
-                     "\x1b[15~":"F5", "\x1b[17~": "F6",\
-                     "\x1b[18~":"F7", "\x1b[19~": "F8",\
-                     "\x1b[20~":"F9", "\x1b[21~": "F10",\
-                     "\x1b[23~":"F11", "\x1b[24~": "F12",\
-                     "\x1b[32~":"SyRq", "\x1b[34~": "Brk",
-                     "\x1b[Z":"Shift Tab"}
+    def tintFrame(self, color):
+        c=self.term.getRGB(color)
+        r, g, b=c['red'], c['green'], c['blue']
+        r=r/255.0
+        g=g/255.0
+        b=b/255.0
+        self.tinted=[]
+        for i in range(0, len(self.frameColors)):
+            c=self.term.getRGB(i)
+            fr,fg,fb=c['red'], c['green'], c['blue']
+            fr=int(fr/16*r)
+            fg=int(fg/16*g)
+            fb=int(fb/16*b)
+            self.tinted.append(F"#{fr:X}{fg:X}{fb:X}")
 
-        def disable_keyboard_echo(self): # Get the current terminal attributes
-            attributes = termios.tcgetattr(sys.stdin)
-            # Disable echo flag
-            attributes[3] = attributes[3] & ~termios.ECHO
-            # Apply the modified attributes
-            termios.tcsetattr(sys.stdin, termios.TCSANOW, attributes)
+    def unTintFrame(self):
+        self.tinted=None
 
-        def enable_keyboard_echo(self): # Get the current terminal attributes
-            attributes = termios.tcgetattr(sys.stdin)
-            # Enable echo flag
-            attributes[3] = attributes[3] | termios.ECHO
-            # Apply the modified attributes
-            termios.tcsetattr(sys.stdin, termios.TCSANOW, attributes)
+    def setCharacters(self):
+        self.chars=chars
 
-        def binread(self):
+    def draw(self, x, y, w, h, fill=True):
+        if(w<3): w=3
+        if(h<3): h=3
+        colors=self.frameColors
+        if(self.tinted):
+            colors=self.tinted
+        buff=self.term.gotoxy(x,y)
+        buff+=self.term.ansicolor(colors[0], self.bg0)+self.chars[0]
+        buff+=self.term.ansicolor(colors[1], self.bg0)+self.chars[1]*(w-2)
+        buff+=self.term.ansicolor(colors[2], self.bg0)+self.chars[2]
+        buff+=self.term.ansicolor(self.fg0, self.bg0)
+        for i in range(1,h-1):
+            buff+=self.term.gotoxy(x,y+i)+\
+                self.term.ansicolor(colors[3], self.bg0)+self.chars[3]
+            if(fill):
+                buff+=self.term.ansicolor(colors[4], self.bgColor)+self.chars[4]*(w-2)
+            else:
+                buff+=self.term.ansicolor(colors[4], self.bgColor)
+                buff+=F"\x1b[{w-2}C"
+            buff+=self.term.ansicolor(colors[5], self.bg0)+self.chars[5]
+            buff+=self.term.ansicolor(self.fg0, self.bg0)
+        buff+=self.term.gotoxy(x,y+h-1)
+        buff+=self.term.ansicolor(colors[6], self.bg0)+self.chars[6]
+        buff+=self.term.ansicolor(colors[7], self.bg0)+self.chars[7]*(w-2)
+        buff+=self.term.ansicolor(colors[8], self.bg0)+self.chars[8]
+        buff+=self.term.ansicolor(self.fg0, self.bg0)
+        if self.title!='':
+            desc=self.title
+            descX=int(x+(w/2)-(len(desc)/2))+1
+            descY=int(y)
+            descPos=self.move(descX, descY)
+            descColor=self.term.ansicolor(16, colors[1])
+            buff+=f'{descPos}{descColor}{desc}'
+            buff+=self.term.ansicolor(self.fg0, self.bg0)
+        if self.statusBar!='':
+            pass
+        return buff
+
+class termKeyboard:
+    def __init__(self):
+        self.keymap={ "\x1b[A":"Up", "\x1b[B":"Down",\
+                 "\x1b[C":"Right", "\x1b[D":"Left",\
+                 "\x7f":"Backspace", "\x09":"Tab",\
+                 "\x0a":"Enter", "\x1b\x1b":"Esc",\
+                 "\x1b[H":"Home", "\x1b[F":"End",\
+                 "\x1b[5~":"PgUp", "\x1b[6~":"PgDn",\
+                 "\x1b[2~":"Ins", "\x1b[3~":"Del",\
+                 "\x1bOP":"F1", "\x1bOQ":"F2",\
+                 "\x1bOR":"F3", "\x1bOS":"F4",\
+                 "\x1b[15~":"F5", "\x1b[17~": "F6",\
+                 "\x1b[18~":"F7", "\x1b[19~": "F8",\
+                 "\x1b[20~":"F9", "\x1b[21~": "F10",\
+                 "\x1b[23~":"F11", "\x1b[24~": "F12",\
+                 "\x1b[32~":"SyRq", "\x1b[34~": "Brk",
+                 "\x1b[Z":"Shift Tab"}
+
+    def disable_keyboard_echo(self): # Get the current terminal attributes
+        attributes = termios.tcgetattr(sys.stdin)
+        # Disable echo flag
+        attributes[3] = attributes[3] & ~termios.ECHO
+        # Apply the modified attributes
+        termios.tcsetattr(sys.stdin, termios.TCSANOW, attributes)
+
+    def enable_keyboard_echo(self): # Get the current terminal attributes
+        attributes = termios.tcgetattr(sys.stdin)
+        # Enable echo flag
+        attributes[3] = attributes[3] | termios.ECHO
+        # Apply the modified attributes
+        termios.tcsetattr(sys.stdin, termios.TCSANOW, attributes)
+
+    def binread(self):
+        return sys.stdin.buffer.read(1)
+
+    def read(self):
+        try:
+            return sys.stdin.read(1)
+        except:
             return sys.stdin.buffer.read(1)
+        return ''
 
-        def read(self):
-            try:
-                return sys.stdin.read(1)
-            except:
-                return sys.stdin.buffer.read(1)
-            return ''
+    def ord(self, d):
+        if(type(d)==int):
+            return d
+        if(type(d)==str):
+            return ord(d[0])
+        if(type(d)==bytes):
+            return int.from_bytes(d)
+        return int(d)
 
-        def ord(self, d):
-            if(type(d)==int):
-                return d
-            if(type(d)==str):
-                return ord(d[0])
-            if(type(d)==bytes):
-                return int.from_bytes(d)
-            return int(d)
-
-        def read_keyboard_input(self): # Get the current settings of the terminal
-            filedescriptors = termios.tcgetattr(sys.stdin)
-            # Set the terminal to cooked mode
-            tty.setcbreak(sys.stdin)
+    def read_keyboard_input(self): # Get the current settings of the terminal
+        filedescriptors = termios.tcgetattr(sys.stdin)
+        # Set the terminal to cooked mode
+        tty.setcbreak(sys.stdin)
+        char = self.read()
+        buffer=char
+        # Check if the character is an arrow key or a function key
+        if char == "\x1b":
             char = self.read()
-            buffer=char
-            # Check if the character is an arrow key or a function key
-            if char == "\x1b":
+            buffer+=char
+            if(char=='O'):
                 char = self.read()
                 buffer+=char
-                if(char=='O'):
-                    char = self.read()
-                    buffer+=char
-                elif char=='[':
-                    char = self.read()
-                    buffer+=char
-                    if char=='M':
-                        b = self.ord(self.read())-32
-                        x = self.ord(self.read())-32
-                        y = self.ord(self.read())-32
-                        #TODO handle mouse code ---
-                        buffer+=f'{b};{x};{y}'
-                    else:
-                        while char>='0' and char<='9' or char==';':
-                            char = self.read()
-                            buffer+=char
+            elif char=='[':
+                char = self.read()
+                buffer+=char
+                if char=='M':
+                    b = self.ord(self.read())-32
+                    x = self.ord(self.read())-32
+                    y = self.ord(self.read())-32
+                    #TODO handle mouse code ---
+                    buffer+=f'{b};{x};{y}'
+                else:
+                    while char>='0' and char<='9' or char==';':
+                        char = self.read()
+                        buffer+=char
 
-            # Restore the original settings of the terminal
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, filedescriptors)
-            key=self.keymap.get(str(buffer))
-            return key or str(buffer)
+        # Restore the original settings of the terminal
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, filedescriptors)
+        key=self.keymap.get(str(buffer))
+        return key or str(buffer)
 
+class widget():
+    def __init__(self, *args, **kwargs):
+        self.interactions=0
+        self.x=0
+        self.y=0
+        self.minW=1
+        self.minH=1
+        self.w=self.minW
+        self.h=self.minH
+        #self.setSize(1, 1, 1, 1)
+        self.t=termcontrol()
+        self.kb=termKeyboard()
+        self.widgetList=[]
+        self.focus=None
+        self.parent=None
+
+    def __del__(self):
+        pass
+    
+    def setColors(self, fg, bg):
+        self.fg, self.bg=fg, bg
+
+    def setSize(self, x, y, w, h): #should always be okay
+        if x<0:
+            x=0
+        if y<0:
+            y=0
+        scr=self.t.get_terminal_size()
+        if w<self.minW:
+            w=self.minW
+        if h<self.minH:
+            h=self.minH
+        if x>scr['columns']-self.minW:
+            x=scr['columns']-self.minW
+        if y>scr['rows']-self.minH:
+            y=scr['rows']-self.minH
+        if w>scr['columns']-x:
+            w=scr['columns']-x
+        if h>scr['rows']-y:
+            h=scr['rows']-y
+        self.x=x
+        self.y=y
+        self.w=w
+        self.h=h
+
+    def addWidget(self, widget):
+        self.widgetList.append(widget)
+        widget.setColors(self.fg, self.bg)
+        return self.widgetList[-1]
+
+    def resize(self):
+        for w in self.widgetList:
+            w.resize()
+
+    def draw(self):
+        buffer=''
+        for w in self.widgetList:
+            buffer+=w.draw()
+        return buffer
+
+    def setFocus(self):
+        pas
+
+    def onFocus(self):
+        pass
+
+    def onDeFocus(self):
+        pass
+
+    def mouseEvent(self, x, y, buttons):
+        pass
+
+    def kbEvent(self, ch):
+        pass
+
+class widgetScreen(widget):
+    def __init__(self, x, y, w, h, fg=7, bg=0, termBg=None, theme=None):
+        super().__init__()
+        self.termBg=termBg
+        if theme:
+            self.box=boxDraw(style=theme, fg0=fg, bg0=bg, bgColor=self.termBg)
+        else:
+            self.box=None
+        self.setColors(fg, bg)
+        self.setSize(x, y, w, h)
+        self.resize()
+        self.feed=self.stream.feed
+
+    def setColor(self, fg, bg):
+        super().setColors(fg, bg)
+        if self.box:
+            self.box.fg0=fg
+            self.box.bg0=bg
+
+    def resize(self):
+        super().resize()
+        self.minW=5
+        self.minH=5
+        if self.box:
+            self.screen = pyte.Screen(self.w-4, self.h-2)
+            self.screen.screen_lines=self.h-2
+        else:
+            self.screen = pyte.Screen(self.w, self.h)
+            self.screen.screen_lines=self.h
+        self.screen.mode.add(pyte.modes.LNM)
+        self.screen.encoding='utf-8'
+        self.stream = pyte.Stream(self.screen)
+
+    def draw(self):
+        buffer=''
+        if(self.box):
+            buffer+=self.box.draw(self.x, self.y, self.w, self.h)
+        self.stream.feed(self.t.ansicolor(self.termBg))
+        self.stream.feed(super().draw())
+        self.stream.feed(self.t.gotoxy(1, self.screen.screen_lines))
+        if self.box:
+            buffer+=self.t.pyte_render(self.x+2, self.y+1, self.screen, fg=self.fg, bg=self.termBg)
+        else:
+            buffer+=self.t.pyte_render(self.x, self.y, self.screen, fg=self.fg, bg=self.termBg)
+        return buffer
+    
+    def input(self, str, maxlen=50):
+        if maxlen < 1:
+            maxlen=1
+        if self.box:
+            buffer = self.t.gotoxy(self.screen.cursor.x+self.x+2, self.screen.cursor.y+self.y+1)
+        else:
+            buffer = self.t.gotoxy(self.screen.cursor.x+self.x, self.screen.cursor.y+self.y)
+        buffer+=str
+        buffer +=self.t.reset()+' '*maxlen+self.t.left(maxlen)
+        return input(buffer) #, maxlen=maxlen)
+
+    def onFocus(self):
+        pass
+
+    def onDeFocus(self):
+        pass
+
+    def mouseEvent(self, x, y, buttons):
+        pass
+
+    def kbEvent(self, ch):
+        pass
 

@@ -2,7 +2,7 @@
 import sys, hashlib, subprocess, logging, colorlog, datetime, glob, shutil, io
 import os, json, mistune, xml.etree.ElementTree as ET, binascii, fcntl, termios
 import string, xml.dom.minidom as minidom, pyte, configparser, pydub, re, array
-from termcontrol import termcontrol
+from termcontrol import termcontrol, pyteLogger, boxDraw, widgetScreen
 from pprint import pprint
 from optparse import OptionParser
 from gtts import gTTS
@@ -47,10 +47,10 @@ class VidMaker:
     def __init__(self, script_file, resolution, debug):
         self.t=termcontrol()
         self.clips=None
-        self.backbox=self.t.boxDraw(style='outside')
-        self.statusbox=self.t.boxDraw(style='outside', bgColor=234)
+        self.backbox=boxDraw(style='outside', bgColor=24, bg0=24)
+        self.statusbox=boxDraw(style='outside', bgColor=234, bg0=234)
         self.statusbox.tintFrame('#FF0000')
-        print('\x1b[2J')
+        self.t.clear()
         self.globals={}
         self.script_file=script_file
         self.basefn0,self.ext= os.path.splitext(script_file)
@@ -108,7 +108,6 @@ class VidMaker:
         return False
 
     def interface(self, decoration=True):
-        lines=0
         decoration=decoration or self.resize()
         def print_fn(fn):
             missing=True
@@ -172,10 +171,11 @@ class VidMaker:
         if line<1:
             line=1
         buffer += self.t.ansicolor(None, self.statusbox.bgColor)
+        self.status_stream.feed(self.t.gotoxy(1, self.status_screen.screen_lines+line))
         buffer += self.t.pyte_render(5, 3, self.status_screen, line)
         #display log terminal
         buffer += self.t.ansicolor(None, 0)
-        buffer += self.t.pyte_render(1, int(self.status_screen.screen_lines+(2*2)+1), self.log_screen)
+        buffer += self.t.pyte_render(1, int(self.status_screen.screen_lines+(2*2)+1), self.log_screen, fg=15)
         return buffer
 
     def refresh(self):
@@ -183,7 +183,7 @@ class VidMaker:
         self.blit_buffer()
 
     def full_refresh(self):
-        self.buffer=self.interface(decoration=True)
+        self.buffer=self.t.clear()+self.interface(decoration=True)
         self.blit_buffer()
 
     def setup_logger(self, debug):  #, x. y. screen):
@@ -223,7 +223,7 @@ class VidMaker:
         # Configure the root logging with the handlers
         logging.root.handlers = [file_handler, stderr_handler]
         logging.root.setLevel(logging.DEBUG)
-        logging.setLoggerClass(self.t.pyteLogger)
+        #logging.setLoggerClass(pyteLogger)
         logging.refresh_class=self
         logger.refresh_class=self
 
@@ -315,7 +315,9 @@ class VidMaker:
         #self.si.search_images_bing(search_query, num_images, output_directory)
         self.si.search_media_pixabay(search_query, num_images, output_directory)
 
-    def generate_tts_audio_buffer(self, audio_buffer_file, text_content, voice='gtts', lang='en', tld='com.au', speed=1.0, pitch=1.0):
+    def generate_tts_audio_buffer(self, audio_buffer_file, text_content,
+                                  voice='gtts', lang='en', tld='com.au',
+                                  speed=1.0, pitch=1.0):
         """
         Generates a TTS audio buffer using GTTS from the provided text content
         and saves it to the specified audio buffer file.
@@ -327,7 +329,6 @@ class VidMaker:
                 tts = gTTS(text_content, lang=lang, tld=tld, slow=False)
                 # Adjust speed and pitch if necessary
                     # Modify the speech with pydub
-                speed=1.2
                 if speed != 1.0 or pitch != 1.0 or True:
                     buffer=io.BytesIO()
                     tts.write_to_fp(buffer)
@@ -389,13 +390,18 @@ class VidMaker:
             log(f"{verb} {type}: {file_path}\n\tDescription: {description}\n\tScript: {script}")
             if type.lower()=="tts":
                 verb="Generated"
-                self.generate_tts_audio_buffer(file_path, script)
+                self.generate_tts_audio_buffer(file_path, script, speed=1.2)
             elif type.lower() in ["image", "video"]:
-                verb="Found"
+                verb="Downloaded"
                 while not self.file_exists(file_path):
-                    print('\x1b[2;3H\x1b[97mPlease enter new search terms.')
-                    print(f'\x1b[3;3H\x1b[97mScript: \x1b[93m"{script}"')
-                    desc=input(f'\x1b[4;3H\x1b[97m[{description}]: \x1b[0m'+' '*25+"\x1b[25D")
+                    querybox=widgetScreen(20, 10, 45, 5, bg=234, fg=15, termBg=234, theme='curve')
+                    buff=f'{self.t.setfg(15)}Please enter new search terms.\n'
+                    buff+=f'Script: "{self.t.setfg(11)}{script}{self.t.setfg(15)}"\n'
+                    querybox.feed(buff)
+                    print(querybox.draw())
+                    print(self.t.enable_cursor())
+                    desc=querybox.input(f'[{description}]: ', maxlen=25)
+                    print(self.t.disable_cursor())
                     if(desc!=''):
                         description=desc
                     search_dir=f'search/{description.lower()}'[:24]
@@ -407,8 +413,8 @@ class VidMaker:
                     for handler in logging.root.handlers[:]:
                         logging.root.removeHandler(handler)
                     copied=imgs.interface(file_path, glob.glob(f'{search_dir}/*'), description[:40])
-                    self.t.clear_images()
-                    self.t.clear()
+                    print(self.t.clear_images())
+                    print(self.t.clear())
                     self.setup_logger(self.debug)
                     if copied != file_path:
                         self.rename[file_path]=copied
@@ -854,14 +860,15 @@ class VidMaker:
             full_script=""
             clip['Position']=self.fix_placement(None)
             media_list = clip.get("Media", [])
+            clipFile=self.work_dir+'/'+os.path.splitext(clip['FilePath'])[0]+'.'+self.resolution+'.mp4'
             for media in media_list:
-                if self.update_type(f'{self.work_dir}/{media.get("FilePath")}'):
-                    media['FilePath'] = os.path.basename(self.update_type(f'{self.work_dir}/{media.get("FilePath")}'))
-                file_path = media.get("FilePath")
+                filePath=self.update_type(f'{self.work_dir}/{media.get("FilePath")}')
+                if filePath:
+                    media['FilePath'] = os.path.basename(filePath)
                 media_type = media.get("MediaType")
                 if media_type.lower()=='image':
-                    if os.path.splitext(file_path)[1].lower() in video_types:
-                        media['Volume']="0%" #FIXME this isn't working
+                    if os.path.splitext(media.get('FilePath') or '')[1].lower() in video_types:
+                        media['Volume']="0%"
                 media["Position"]=self.fix_placement(media)
                 script = media.get('Script')
                 if script and len(script)>0:
@@ -869,11 +876,15 @@ class VidMaker:
                 description = media.get("Description")
                 if media_type:
                     # Process missing media
-                    if file_path and not self.file_exists(file_path):
-                        missing+=self.get_missing_file(media_type, self.work_dir+'/'+file_path, description, script)
-                        if self.update_type(f'{self.work_dir}/{media.get("FilePath")}'): #TODO restructure, eliminate dup
-                            media['FilePath'] = os.path.basename(self.update_type(f'{self.work_dir}/{media.get("FilePath")}'))
-                        file_path = media.get("FilePath")
+                    if media.get('FilePath') and not self.file_exists(filePath):
+                        #rm clip_file
+                        if self.file_exists(clipFile):
+                            logger.info(f'Removing obsolete clip: {clipFile}')
+                            os.remove(clipFile)
+                        missing+=self.get_missing_file(media_type, f'{self.work_dir}/{media.get("FilePath")}', description, script)
+                        filePath=self.update_type(f'{self.work_dir}/{media.get("FilePath")}')
+                        if filePath:
+                            media['FilePath'] = os.path.basename(filePath)
             clip['Script']=full_script
         self.fix_durations(clips)
         return missing
@@ -1280,7 +1291,8 @@ class VidMaker:
             config.write(f)
 
     def create(self, check_only):
-        self.buffer="\x1b[0m\x1b[2J"
+        self.t.disable_cursor()
+        self.buffer=self.t.reset()+self.t.clear()
         config_file=os.path.expanduser("~/.pyVidMaker.conf")
         default_config={
                 'apikeys':{
@@ -1317,6 +1329,8 @@ class VidMaker:
                     self.join_clips(clips, defaults.get("BackgroundMusic"), self.sub_file, self.output_file)
         else:
             logger.critical(f"Unknown script type: {self.ext.lower()}")
+
+        self.t.enable_cursor()
         return xml_file
 
 def main():
@@ -1334,12 +1348,12 @@ def main():
         return
     morefiles=[]
     global logger
-    logger=termcontrol.pyteLogger()
+    logger=pyteLogger()
     script_file = args[0]
     if options.resolution:
         for rez in options.resolution.split(','):
             vm=VidMaker(script_file, rez.lower(), options.debug)
-            logger=self.t.pyteLogger(vm)
+            logger=pyteLogger(vm)
             morefiles.append(vm.create(options.check))
         for x in morefiles:
             if type(x)==str:
@@ -1348,7 +1362,7 @@ def main():
                 vm.create(options.check)
     else:
         vm=VidMaker(script_file, False, options.debug)
-        logger=termcontrol.pyteLogger(vm)
+        logger=pyteLogger(vm)
         more=vm.create(options.check)
         if type(more)==str:
             logger.info(f'{more} has been written.')
