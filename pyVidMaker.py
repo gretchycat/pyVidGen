@@ -2,7 +2,7 @@
 import sys, hashlib, subprocess, logging, colorlog, datetime, glob, shutil, io
 import os, json, mistune, xml.etree.ElementTree as ET, binascii, fcntl, termios
 import string, xml.dom.minidom as minidom, pyte, configparser, pydub, re, array
-from termcontrol import termcontrol, pyteLogger, boxDraw, widgetScreen
+from termcontrol import termcontrol, pyteLogger, boxDraw, widgetScreen, widgetProgressBar
 from pprint import pprint
 from optparse import OptionParser
 from gtts import gTTS
@@ -49,7 +49,7 @@ class VidMaker:
         self.clips=None
         self.backbox=boxDraw(style='outside', bgColor=24, bg0=24)
         self.statusbox=boxDraw(style='outside', bgColor=234, bg0=234)
-        self.statusbox.tintFrame('#FF0000')
+        self.statusbox.tintFrame('#F00')
         self.t.clear()
         self.globals={}
         self.script_file=script_file
@@ -66,9 +66,9 @@ class VidMaker:
         col=self.term_size['columns']
         row=self.term_size['rows']
         sts_col=col-(4*2)
-        sts_row=int(row/2)-4
+        sts_row=int(row/2)-4-1
         log_col=col
-        log_row=row-sts_row-(2*2)
+        log_row=row-sts_row-(2*2)-2
         scrollback=10000
         self.log_screen = pyte.HistoryScreen(log_col, log_row)
         self.log_screen.screen_lines=log_row
@@ -77,6 +77,8 @@ class VidMaker:
         self.status_screen.screen_lines=sts_row
         self.status_screen.mode.add(pyte.modes.LNM)
         # Create a pyte stream.
+        self.log_cache=""
+        self.status_cache=""
         self.log_stream = pyte.Stream(self.log_screen)
         self.log_stream.write=self.log_stream.feed
         self.status_stream = pyte.Stream(self.status_screen)
@@ -94,18 +96,28 @@ class VidMaker:
         self.markdown=mistune.create_markdown(renderer=None)
 
     def resize(self):
-        if self.res!=self.t.get_terminal_size():
-            self.res=self.t.get_terminal_size()
-            col=self.term_size['columns']
-            row=self.term_size['rows']
-            sts_col=col-(4*2)
-            sts_row=int(row/2)-4
-            log_col=col
-            log_row=row-sts_row-(2*2)
-            #self.log_screen.resize(log_col, log_row)
-            #self.status_screen.resize(sts_col, sts_row)
-            return True
-        return False
+        pass
+    
+    def get_progress(self, clips):
+        total_source=0
+        existing_source=0
+        total_clips=0
+        encoded_clips=0
+        if clips:
+            total_clips=len(clips)
+            for c in clips:
+
+                clipFile=os.path.splitext(c.get('FilePath') or '')[0]+'.'+self.resolution+'.mp4'
+                if self.file_exists(self.work_dir+'/'+clipFile):
+                    encoded_clips += 1
+                all_media=c.get('Media')
+                for m in all_media:
+                    f=m.get('FilePath')
+                    if f:
+                        total_source+=1
+                        if self.file_exists(self.work_dir+'/'+f):
+                            existing_source+=1
+        return { 'clips':[ encoded_clips, total_clips ], 'media':[ existing_source, total_source ] }
 
     def interface(self, decoration=True):
         decoration=decoration or self.resize()
@@ -143,12 +155,15 @@ class VidMaker:
         col=self.term_size['columns']
         row=self.term_size['rows']
         if decoration:
-            buffer +=self.backbox.draw(1, 1, col, self.status_screen.screen_lines+4)
+            buffer +=self.backbox.draw(1, 1, col, self.status_screen.screen_lines+4+2)
             buffer += self.statusbox.draw(3, 2, col-4, self.status_screen.screen_lines+2)
+            self.status_cache=''
+            self.log_cache=''
         #display process summary
         first_missing_clip=None
         first_missing_media=None
         self.status_stream.feed(self.t.setbg(self.statusbox.bgColor)+self.t.gotoxy(1,1)+self.t.clear())
+        progress=self.get_progress(self.clips)
         if self.clips:
             n=len(self.clips)
             if self.clips:
@@ -170,12 +185,23 @@ class VidMaker:
             line=cursor[1]-int(self.status_screen.screen_lines/2)
         if line<1:
             line=1
-        buffer += self.t.ansicolor(None, self.statusbox.bgColor)
         self.status_stream.feed(self.t.gotoxy(1, self.status_screen.screen_lines+line))
-        buffer += self.t.pyte_render(5, 3, self.status_screen, line)
+        out = self.t.pyte_render(5, 3, self.status_screen, line)
+        if out != self.status_cache:
+            self.status_cache=out
+            buffer += self.t.ansicolor(None, self.statusbox.bgColor)
+            buffer+=out
         #display log terminal
-        buffer += self.t.ansicolor(None, 0)
-        buffer += self.t.pyte_render(1, int(self.status_screen.screen_lines+(2*2)+1), self.log_screen, fg=15)
+        out = self.t.pyte_render(1, int(self.status_screen.screen_lines+(2*2)+3), self.log_screen, fg=15)
+        if out != self.log_cache:
+            self.log_cache=out
+            buffer += self.t.ansicolor(None, 0)
+            buffer+=out
+        mpb=widgetProgressBar(3, self.status_screen.screen_lines+4, col-4, 1, 11,24, note="Media Files: ")
+        cpb=widgetProgressBar(3, self.status_screen.screen_lines+5, col-4, 1, 11,24, note="Clip Files:  ")
+        buffer+=mpb.draw(progress['media'][0], progress['media'][1])
+        buffer+=cpb.draw(progress['clips'][0], progress['clips'][1])
+        buffer+=self.t.gotoxy(1, row)
         return buffer
 
     def refresh(self):
@@ -748,6 +774,7 @@ class VidMaker:
 
     def fix_durations(self, clips):
         totalDuration=0
+        logger.info("Calculating Durations")
         for clip in clips:
             passes=0
             clipLength=0.0
@@ -787,6 +814,8 @@ class VidMaker:
                 clip['Duration']=round(clipLength, 3)
                 clip['StartTime']=0#totalDuration
                 #clip['Resolution']=self.resolution
+                if passes==2:
+                    logger.info(f'{clip["FilePath"]} is {clip["Duration"]}s long.')
                 totalDuration+=round(clipLength, 3)
             #TODO check filter durations too
 
@@ -1089,7 +1118,7 @@ class VidMaker:
             inputs['a'].append(output)
             a_output_num+=1
             return ';'.join(graph)
-
+        
         command = ['ffmpeg']
         filter_graph={"v":[], "a":[]}
         inputs={"v":[], "a":[]}
@@ -1156,6 +1185,8 @@ class VidMaker:
         else:
             filter_graph_str=f"{v_s}{a_s}"
         clipFile=os.path.splitext(clip['FilePath'])[0]+'.'+self.resolution+'.mp4'
+
+        logger.info(f"Generating clip: {clipFile}")
         command.extend(['-filter_complex', filter_graph_str])
         if v_s!="":
             command.extend(['-map', f'[{str(inputs["v"].pop())}]'])
@@ -1168,6 +1199,7 @@ class VidMaker:
             self.work_dir+'/'+clipFile
         ])
         if not self.file_exists( self.work_dir+'/'+clipFile):
+            self.full_refresh()
             self.execute_command(command)
             self.add_missing_streams(self.work_dir+'/'+clipFile)
 
@@ -1177,6 +1209,7 @@ class VidMaker:
         Creates a subtitle track for the video based on the durations of the clips
         and saves it to the output file.
         """
+        logger.info("Generating subtitles.")
         with open(filename, 'w') as f:
             count = 1
             for clip in clips:
@@ -1192,6 +1225,7 @@ class VidMaker:
 
     def join_clips(self, clips, background_audio_file, sub_file, output_file):
         #FIXME this is not right yet-- add transitions
+        logger.info("Joining all the clips together")
         command = ['ffmpeg']
         #command.extend(['-framerate', self.fps])
         with open(f'{self.work_dir}/clips.list', 'w') as f:
@@ -1219,6 +1253,7 @@ class VidMaker:
         vmap='0:v'
         amap='0:a'
         if background_audio_file:
+            logger.info("Merging background audio")
             stream+=1
             loop=True   #TODO read from xml
             music_volume=0.1 #TODO read from xml
@@ -1316,6 +1351,8 @@ class VidMaker:
             if info.get('Title'):
                 self.basefn0=info.get('Title')
                 self.work_dir = self.basefn0+'.work'
+
+            logger.info("Checking for missing media")
             missing=self.check_missing_media(clips)
             if(missing):
                 logger.error(f'There are {missing} missing media files.')

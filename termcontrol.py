@@ -348,29 +348,35 @@ class termcontrol:
             self.img_cache[image]=ic.print(image)
         return f'{start_pos}{self.img_cache[image]}{desc}'
 
+def clean(input_string):
+    # Use regular expressions to replace consecutive whitespace characters with a single space
+    cleaned_string = re.sub(r'\s+', ' ', input_string)
+    # Remove leading and trailing spaces
+    return cleaned_string.strip()
+
 class pyteLogger(logging.Logger):
     def __init__(self, refresh_class=None):
         logging.__init__('pyte')
         self.refresh_class=refresh_class
 
     def debug(self, msg, *args, **kwargs):
-        logging.debug(msg, *args, **kwargs)
+        logging.debug(clean(msg), *args, **kwargs)
         if self.refresh_class: self.refresh_class.refresh()
 
     def info(self, msg, *args, **kwargs):
-        logging.info(msg, *args, **kwargs)
+        logging.info(clean(msg), *args, **kwargs)
         if self.refresh_class: self.refresh_class.refresh()
 
     def warning(self, msg, *args, **kwargs):
-        logging.warning(msg, *args, **kwargs)
+        logging.warning(clean(msg), *args, **kwargs)
         if self.refresh_class: self.refresh_class.refresh()
 
     def error(self, msg, *args, **kwargs):
-        logging.error(msg, *args, **kwargs)
+        logging.error(clean(msg), *args, **kwargs)
         if self.refresh_class: self.refresh_class.refresh()
 
     def critical(self, msg, *args, **kwargs):
-        logging.critical(msg, *args, **kwargs)
+        logging.critical(clean(msg), *args, **kwargs)
         if self.refresh_class: self.refresh_class.refresh()
         exit()
 
@@ -719,3 +725,23 @@ class widgetScreen(widget):
     def kbEvent(self, ch):
         pass
 
+class widgetProgressBar(widget):
+    def __init__(self, x, y, w, h, fg=7, bg=0, p0='\u2591', p1='\u2588', note=''):
+        super().__init__()
+        self.setSize(x, y, w, h)
+        self.fg, self.bg=fg, bg
+        self.p0, self.p1=p0,p1
+        self.note=note
+
+    def draw(self, progress, total):
+        buffer=self.t.gotoxy(self.x, self.y)
+        buffer+=self.t.ansicolor(self.fg, self.bg)
+        buffer+=self.note
+        pct=0
+        if total>0:
+            pct=progress/total
+        w=self.w-len(self.note)
+        buffer +=self.p1*int((pct)*w)
+        buffer +=self.p0*int(w-((pct)*w))
+        buffer +=f'{self.t.gotoxy(self.x+len(self.note)+int(w/2)-5,self.y)}{progress}/{total}'
+        return buffer
