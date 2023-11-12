@@ -205,7 +205,8 @@ class termcontrol:
 
     def ansicolor(self, fg=7, bg=None,
                   bold=False, dim=False, italic=False, underline=False,
-                  strike=False, blink=False, blink2=False, reverse=False):
+                  strike=False, blink=False, blink2=False, reverse=False,
+                  bold_is_bright=False):
         if fg=='default':
             fg=7
         if bg=='default':
@@ -217,7 +218,10 @@ class termcontrol:
         if type(fg)==int:
             if fg<16:
                 if fg<8:
-                    fgs=f"{fg+30}"
+                    if bold_is_bright:
+                        fgs=f"{fg+90}"
+                    else:
+                        fgs=f"{fg+30}"
                 else:
                     fgs=f"{(fg-8)+90}"
             else:
@@ -261,7 +265,10 @@ class termcontrol:
                 buffer+=f'({x*10+1},{y})'
         return buffer
 
-    def pyte_render(self, x, y, screen, line=1, fg='default', bg='default', fg0='default', bg0='default'):
+    def pyte_render(self, x, y, screen, line=1,
+                    fg='default', bg='default',
+                    fg0='default', bg0='default',
+                    bold_is_bright=False):
         bold=False
         blink=False
         w=screen.columns
@@ -282,7 +289,7 @@ class termcontrol:
                 if screen.buffer[yy][xx].fg!=fg or screen.buffer[yy][xx].bold!=bold:
                     fg=screen.buffer[yy][xx].fg
                     bold=screen.buffer[yy][xx].bold
-                    buffer += self.ansicolor(fg, None, bold=bold)
+                    buffer += self.ansicolor(fg, None, bold=bold, bold_is_bright=bold_is_bright)
                 if screen.buffer[yy][xx].bg!=bg or screen.buffer[yy][xx].blink!=blink:
                     bg=screen.buffer[yy][xx].bg
                     blink=screen.buffer[yy][xx].blink
@@ -599,7 +606,7 @@ class widget():
 
     def __del__(self):
         pass
-    
+
     def setColors(self, fg, bg):
         self.fg, self.bg=fg, bg
 
@@ -701,7 +708,7 @@ class widgetScreen(widget):
         else:
             buffer+=self.t.pyte_render(self.x, self.y, self.screen, fg=self.fg, bg=self.termBg)
         return buffer
-    
+
     def input(self, str, maxlen=50):
         if maxlen < 1:
             maxlen=1

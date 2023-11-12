@@ -4,8 +4,17 @@ import os, json, mistune, xml.etree.ElementTree as ET, binascii, fcntl, termios
 import string, xml.dom.minidom as minidom, pyte, configparser, pydub, re, array
 from termcontrol import termcontrol, pyteLogger, boxDraw, widgetScreen, widgetProgressBar
 from pprint import pprint
+import sounddevice
 from optparse import OptionParser
+from pathlib import Path 
 from gtts import gTTS
+Synthesizer=None
+ModelManager=None
+try:
+    from TTS.utils.synthesizer import Synthesizer
+    from TTS.utils.manage import ModelManager
+except:
+    pass
 from icat import imageSelect
 from SearchImages import SearchImages
 from rich.text import Text
@@ -63,6 +72,33 @@ class VidMaker:
             basefn=self.basefn0
             self.resolution=False
         self.term_size=self.t.get_terminal_size()
+
+        self.model_path = None
+        self.config_path = None
+        self.vocoder_path = None
+        self.vocoder_config_path = None
+        self.manager=None
+        if ModelManager:
+            for p in sys.path:
+                path = f"{p}/TTS/.models.json"
+                logger.info(f'{sys.path}')
+                if self.file_exists(path):
+                    if not self.manager:
+                        self.manager = ModelManager(path)
+            #pprint(self.manager.models_dict)
+            #input()
+            # CASE2: load pre-trained models
+            #model_path, config_path = manager.download_model(args.model_name)
+            #vocoder_path, vocoder_config_path = manager.download_model(args.vocoder_name)
+
+            # CASE3: load custome models
+            #    model_path = args.model_path
+            #    config_path = args.config_path
+
+            #    vocoder_path = args.vocoder_path
+            #    vocoder_config_path = args.vocoder_config_path
+            pass
+
         col=self.term_size['columns']
         row=self.term_size['rows']
         sts_col=col-(4*2)
@@ -97,7 +133,7 @@ class VidMaker:
 
     def resize(self):
         pass
-    
+
     def get_progress(self, clips):
         total_source=0
         existing_source=0
@@ -151,6 +187,7 @@ class VidMaker:
             if missing or True:
                 buffer+=f"{self.t.setfg(15)}, ".join(media_files)
             return f'{buffer}\n', missing, missingClip
+
         buffer=""
         col=self.term_size['columns']
         row=self.term_size['rows']
@@ -192,7 +229,8 @@ class VidMaker:
             buffer += self.t.ansicolor(None, self.statusbox.bgColor)
             buffer+=out
         #display log terminal
-        out = self.t.pyte_render(1, int(self.status_screen.screen_lines+(2*2)+3), self.log_screen, fg=15)
+        out = self.t.pyte_render(1, int(self.status_screen.screen_lines+(2*2)+3),\
+                self.log_screen, fg=15, bold_is_bright=True)
         if out != self.log_cache:
             self.log_cache=out
             buffer += self.t.ansicolor(None, 0)
@@ -301,9 +339,11 @@ class VidMaker:
             frame=0.0
             output=""
             sepw=60
-            logger.info('-'*sepw)
+            #logger.info('-'*sepw)
             logger.info(f"Executing command: {' '.join(command)}")
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, 
+                                       stderr=subprocess.STDOUT, 
+                                       universal_newlines=True)
             outbuffer=''
             ts=self.t.get_terminal_size()
             x,y=int(ts['columns']/2),int(ts['rows']/4*3)
@@ -311,17 +351,18 @@ class VidMaker:
                 logger.debug(line.rstrip('\n'))
                 output+=line
                 outbuffer+=line
-                print(f'{self.t.gotoxy(x,y)}{self.t.ansicolor(15,0)}{anim[int(frame)%len(anim)]}{self.t.gotoxy(int(ts["columns"]), int(ts["rows"])-1)}')
+                print(f'{self.t.ansicolor(15,0)}{self.t.gotoxy(x,y)}\
+                        [{anim[int(frame)%len(anim)]}]\
+                        {self.t.gotoxy(int(ts["columns"]), int(ts["rows"])-1)}')
                 frame+=0.2
             process.wait()
             process.output=output
             if(process.returncode>0):
                 logger.error(process.output)
-                logger.critical(f"Error executing command. ({process.returncode})")
-
+                logger.error(f"Error executing command. ({process.returncode})")
             return process
         except Exception as e:
-            logger.critical(f"Error executing command: {e}")
+            logger.error(f"Error executing command: {e}")
             self.blit_buffer()
 
     def file_exists(self, file_path):
@@ -334,45 +375,6 @@ class VidMaker:
             if os.path.isfile(file_path):
                 return True
         return False
-
-    def search_media(self, search_query, num_images, output_directory):
-        self.si.search_media_pexels(search_query, num_images, output_directory)
-        #self.si.search_images_google(search_query, num_images, output_directory)
-        #self.si.search_images_bing(search_query, num_images, output_directory)
-        self.si.search_media_pixabay(search_query, num_images, output_directory)
-
-    def generate_tts_audio_buffer(self, audio_buffer_file, text_content,
-                                  voice='gtts', lang='en', tld='com.au',
-                                  speed=1.0, pitch=1.0):
-        """
-        Generates a TTS audio buffer using GTTS from the provided text content
-        and saves it to the specified audio buffer file.
-        """
-        #TODO Add Mozilla TTS and pyTTS
-        audio_buffer_file=os.path.splitext(audio_buffer_file)[0]+'.mp3'
-        if not self.file_exists(audio_buffer_file):
-            if voice=='gtts':
-                tts = gTTS(text_content, lang=lang, tld=tld, slow=False)
-                # Adjust speed and pitch if necessary
-                    # Modify the speech with pydub
-                if speed != 1.0 or pitch != 1.0 or True:
-                    buffer=io.BytesIO()
-                    tts.write_to_fp(buffer)
-                    buffer.seek(0)
-                    audio = pydub.AudioSegment.from_mp3(buffer)
-                    audio = audio.set_frame_rate(48000)
-                    audio = audio.set_channels(2)
-                    #audio = audio.set_balance(0)
-                    if speed!=1.0:
-                        audio = audio.speedup(playback_speed=speed)
-                    if pitch != 1.0:
-                        pass
-                        #audio = audio.set_frame_rate(int(audio.frame_rate * pitch))
-                    # Export the modified audio to the specified file
-                    audio.export(audio_buffer_file, format='mp3', bitrate='192k')
-                else:
-                    # Save the original audio to the specified file
-                    tts.save(audio_buffer_file)
 
     def dir_exists(self, file_path):
         """
@@ -408,6 +410,141 @@ class VidMaker:
         logger.warning(f"{file_path} not found")
         return False
 
+    def get_md5(self, file_name):
+        md5=''
+        if self.file_exists(file_name):
+            with open(file_name, 'rb') as file_to_check:
+                data = file_to_check.read()
+                md5 = hashlib.md5(data).hexdigest()
+        return md5
+
+    def set_md5(self, file_name):
+        md5=self.get_md5(file_name)
+        if md5 != '':
+            with open(file_name+'.md5', 'w') as file:
+                file.write(md5)
+
+    def validate_media(self, file_path, clip=None):
+        """
+            Check to see if the file exists
+            Check md5sum (set md5 after generating or aquiring the media)
+            Check for valid media (ffprobe)
+            If invalid media, remove media and clip
+            if md5 is different and valid media, remove clip, set md5
+        """
+        if self.file_exists(file_path):
+            logger.info(f'Testing {file_path}')
+            deleteClip=False
+            oldmd5=None
+            if self.file_exists(file_path+'.md5'):
+                with open(file_path+'.md5', 'r') as file:
+                    oldmd5=file.read()
+            md5=self.get_md5(file_path)
+            ret=self.execute_command(['ffprobe', file_path])
+            if ret.returncode==0:
+                if md5 != oldmd5:
+                    deleteClip=True
+                    self.set_md5(file_path)
+                    logger.info(f"{file_path} has changed and is valid..")
+                else:
+                    logger.info(f"{file_path} has been verified.")
+            else:
+                os.remove(file_path)
+                if self.file_exists(file_path+'.md5'):
+                    os.remove(file_path+'.md5')
+                deleteClip=True
+                logger.info(f"{file_path} is corrupt. Removing")
+        else:
+            deleteClip=True
+        if deleteClip:
+            if clip:
+                clipFile=self.work_dir+'/'+os.path.splitext(clip['FilePath'])[0]+'.'+self.resolution+'.mp4'
+                if clipFile:
+                    if self.file_exists(clipFile):
+                        os.remove(clipFile)
+                        logger.info(f"{clipFile} is outdated. Removing.")
+
+    def search_media(self, search_query, num_images, output_directory):
+        self.si.search_media_pexels(search_query, num_images, output_directory)
+        #self.si.search_images_google(search_query, num_images, output_directory)
+        #self.si.search_images_bing(search_query, num_images, output_directory)
+        self.si.search_media_pixabay(search_query, num_images, output_directory)
+
+    def generate_tts_audio_buffer(self, audio_buffer_file, text_content,
+                                  engine='record', voice=f'tts_models/en/ek1/tacotron2',
+                                  lang='en', tld='com.au',
+                                  speed=1.0, pitch=1.0):
+        """
+        Generates a TTS audio buffer from the provided text content
+        and saves it to the specified audio buffer file.
+        """
+        #TODO Add Mozilla TTS and pyTTS
+        audio=None
+        if not self.file_exists(audio_buffer_file):
+            audio_buffer_file=os.path.splitext(audio_buffer_file)[0]+'.mp3'
+            if engine=='gtts':
+                tts = gTTS(text_content, lang=lang, tld=tld, slow=False)
+                buffer=io.BytesIO()
+                tts.write_to_fp(buffer)
+                buffer.seek(0)
+                audio = pydub.AudioSegment.from_mp3(buffer)
+            elif engine=='mozilla':
+                so=sys.stdout
+                se=sys.stderr
+                sys.stdout=self.log_stream
+                sys.stderr=self.log_stream
+                self.manager.download_model(voice)
+                model_type, lang, dataset, model = voice.split("/")
+                model_full_name = f"{model_type}--{lang}--{dataset}--{model}"
+                model_item = self.manager.models_dict[model_type][lang][dataset][model]
+                # set the model specific output path
+                output_path = os.path.join(self.manager.output_prefix, model_full_name)
+                output_model_path = os.path.join(output_path, "model_file.pth")
+                output_config_path = os.path.join(output_path, "config.json")
+                tts=Synthesizer(output_model_path, output_config_path,
+                                self.vocoder_path, self.vocoder_config_path,
+                                False)
+                sys.stdout=so
+                sys.stderr=se
+                #models=tts.get_available_models()
+                #pprint(models)
+                buffer = tts.tts(text_content+'.')
+                temp_wav=f"{self.work_dir}/.wav"
+                #self.execute_command(['tts', '--text', text_content, '--model_name', voice, '--out_path', temp_wav])
+                tts.save_wav(buffer, temp_wav)
+                with open(temp_wav, 'rb') as wav:
+                    audio=pydub.AudioSegment.from_wav(wav)
+                self.full_refresh()
+                #os.remove(temp_wav)
+            # Adjust speed and pitch if necessary
+            elif engine=='record':
+                temp_wav=f"{self.work_dir}/.wav"
+                #Show script widget, record/pause/play/re-record/accept buttons
+                scriptbox=widgetScreen(20, 10, 65, 22, bg=234, fg=15, termBg=233, theme='curve')
+                scriptbox.feed('\n'.join(page_fit( text_content, 63 )))
+                print(scriptbox.draw())
+                #while not self.file_exists(temp_wav):
+                if True:
+                    #record(temp_wav)
+                    pass
+                input()
+                exit()
+                with open(temp_wav, 'rb') as wav:
+                    audio=pydub.AudioSegment.from_wav(wav)
+                self.full_refresh()
+            if audio:
+                if speed != 1.0 or pitch != 1.0 or True:
+                    audio = audio.set_frame_rate(48000)
+                    audio = audio.set_channels(2)
+                    #audio = audio.set_balance(0)
+                    if speed != 1.0:
+                        audio = audio.speedup(playback_speed=speed)
+                    if pitch != 1.0:
+                        pass
+                # Export the modified audio to the specified file
+                audio.export(audio_buffer_file, format='mp3', bitrate='192k')
+                self.set_md5(audio_buffer_file)
+
     def get_missing_file(self, type, file_path, description, script):
         copied=""
         if file_path:
@@ -416,11 +553,11 @@ class VidMaker:
             log(f"{verb} {type}: {file_path}\n\tDescription: {description}\n\tScript: {script}")
             if type.lower()=="tts":
                 verb="Generated"
-                self.generate_tts_audio_buffer(file_path, script, speed=1.2)
+                self.generate_tts_audio_buffer(file_path, script)
             elif type.lower() in ["image", "video"]:
                 verb="Downloaded"
                 while not self.file_exists(file_path):
-                    querybox=widgetScreen(20, 10, 45, 5, bg=234, fg=15, termBg=234, theme='curve')
+                    querybox=widgetScreen(20, 10, 45, 5, bg=234, fg=15, termBg=233, theme='curve')
                     buff=f'{self.t.setfg(15)}Please enter new search terms.\n'
                     buff+=f'Script: "{self.t.setfg(11)}{script}{self.t.setfg(15)}"\n'
                     querybox.feed(buff)
@@ -445,6 +582,7 @@ class VidMaker:
                     if copied != file_path:
                         self.rename[file_path]=copied
                         file_path=copied
+                    self.set_md5(file_path)
                     self.full_refresh()
             missing=0 if self.file_exists(self.update_type(file_path)) else 1
             if missing>0:
@@ -772,6 +910,14 @@ class VidMaker:
         self.clips=clips
         return clips, global_defaults_dict, info_dict
 
+    def validate_all_media(self, clips):
+        logger.info('Checking all the media')
+        for clip in clips:
+            for media in clip['Media']:
+                self.validate_media(self.work_dir+'/'+media['FilePath'], clip)
+            clipFile=self.work_dir+'/'+os.path.splitext(clip['FilePath'])[0]+'.'+self.resolution+'.mp4'
+            self.validate_media(clipFile)
+
     def fix_durations(self, clips):
         totalDuration=0
         logger.info("Calculating Durations")
@@ -892,6 +1038,7 @@ class VidMaker:
             clipFile=self.work_dir+'/'+os.path.splitext(clip['FilePath'])[0]+'.'+self.resolution+'.mp4'
             for media in media_list:
                 filePath=self.update_type(f'{self.work_dir}/{media.get("FilePath")}')
+                self.validate_media(filePath, clip)
                 if filePath:
                     media['FilePath'] = os.path.basename(filePath)
                 media_type = media.get("MediaType")
@@ -914,8 +1061,8 @@ class VidMaker:
                         filePath=self.update_type(f'{self.work_dir}/{media.get("FilePath")}')
                         if filePath:
                             media['FilePath'] = os.path.basename(filePath)
+            self.validate_media(filePath, clip)
             clip['Script']=full_script
-        self.fix_durations(clips)
         return missing
 
     def add_missing_streams(self, input_file):
@@ -1118,7 +1265,7 @@ class VidMaker:
             inputs['a'].append(output)
             a_output_num+=1
             return ';'.join(graph)
-        
+
         command = ['ffmpeg']
         filter_graph={"v":[], "a":[]}
         inputs={"v":[], "a":[]}
@@ -1185,8 +1332,6 @@ class VidMaker:
         else:
             filter_graph_str=f"{v_s}{a_s}"
         clipFile=os.path.splitext(clip['FilePath'])[0]+'.'+self.resolution+'.mp4'
-
-        logger.info(f"Generating clip: {clipFile}")
         command.extend(['-filter_complex', filter_graph_str])
         if v_s!="":
             command.extend(['-map', f'[{str(inputs["v"].pop())}]'])
@@ -1199,9 +1344,11 @@ class VidMaker:
             self.work_dir+'/'+clipFile
         ])
         if not self.file_exists( self.work_dir+'/'+clipFile):
+            logger.info(f"Rendering clip: {clipFile}")
             self.full_refresh()
             self.execute_command(command)
             self.add_missing_streams(self.work_dir+'/'+clipFile)
+            self.set_md5(self.work_dir+'/'+clipFile)
 
     def generate_srt(self, clips, filename):
         #FIXME times are wrong
@@ -1336,7 +1483,6 @@ class VidMaker:
                 'defaults':{
                     'resolution':'1920x1080'}
                 }
-
         self.full_refresh()
         read=self.read_config_file(config_file)
         self.config=self.merge_dict_configs(default_config, read)
@@ -1351,9 +1497,10 @@ class VidMaker:
             if info.get('Title'):
                 self.basefn0=info.get('Title')
                 self.work_dir = self.basefn0+'.work'
-
             logger.info("Checking for missing media")
             missing=self.check_missing_media(clips)
+            #self.validate_all_media(clips)
+            self.fix_durations(clips)
             if(missing):
                 logger.error(f'There are {missing} missing media files.')
             else:
@@ -1364,6 +1511,7 @@ class VidMaker:
                     self.generate_srt(clips, self.sub_file)
                     self.output_file=f'{self.basefn0}.{self.resolution}.mp4'
                     self.join_clips(clips, defaults.get("BackgroundMusic"), self.sub_file, self.output_file)
+            logger.info('Done')
         else:
             logger.critical(f"Unknown script type: {self.ext.lower()}")
 
