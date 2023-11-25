@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import sys, os, logging, pyte, re, icat
+import sys, os, fcntl, select, asyncio, termios, tty, logging, pyte, re, icat
 
 """
          0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
@@ -74,7 +74,7 @@ class termcontrol:
             return "\x1b[?1005h"
         return "\x1b[?1000h"
 
-    def disable_mouse(self, urf8=True):
+    def disable_mouse(self, utf8=True):
         if(utf8):
             return "\x1b[?1005l"
         return "\x1b[?1000l"
@@ -447,6 +447,9 @@ class boxDraw:
         self.frameColors=frameColors
 
     def tintFrame(self, color):
+        if color==None:
+            self.tinted=None
+            return
         c=self.term.getRGB(color)
         r, g, b=c['red'], c['green'], c['blue']
         r=r/255.0
@@ -507,7 +510,8 @@ class boxDraw:
 
 class termKeyboard:
     def __init__(self):
-        self.keymap={ "\x1b[A":"Up", "\x1b[B":"Down",\
+        self.kbtimeout=0.25
+        self.keymap={"\x1b[A":"Up", "\x1b[B":"Down",\
                  "\x1b[C":"Right", "\x1b[D":"Left",\
                  "\x7f":"Backspace", "\x09":"Tab",\
                  "\x0a":"Enter", "\x1b\x1b":"Esc",\
@@ -537,14 +541,16 @@ class termKeyboard:
         # Apply the modified attributes
         termios.tcsetattr(sys.stdin, termios.TCSANOW, attributes)
 
-    def binread(self):
-        return sys.stdin.buffer.read(1)
-
-    def read(self):
-        try:
-            return sys.stdin.read(1)
-        except:
-            return sys.stdin.buffer.read(1)
+    def read(self, bin=False):
+        rlist, _, _ = select.select([sys.stdin], [], [], self.kbtimeout)
+        if rlist:
+            if not bin:
+                try:
+                    return sys.stdin.read(1)
+                except:
+                    return sys.stdin.buffer.read(1)
+            else:
+                return sys.stdin.buffer.read(1)
         return ''
 
     def ord(self, d):
@@ -557,6 +563,8 @@ class termKeyboard:
         return int(d)
 
     def read_keyboard_input(self): # Get the current settings of the terminal
+        flags = fcntl.fcntl(sys.stdin.fileno(), fcntl.F_GETFL)
+        fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, flags | os.O_NONBLOCK)
         filedescriptors = termios.tcgetattr(sys.stdin)
         # Set the terminal to cooked mode
         tty.setcbreak(sys.stdin)
@@ -566,55 +574,86 @@ class termKeyboard:
         if char == "\x1b":
             char = self.read()
             buffer+=char
-            if(char=='O'):
+            if(char=='O'):      #special key F1-F4
                 char = self.read()
                 buffer+=char
-            elif char=='[':
+            elif char=='[':     #special key or mouse
                 char = self.read()
                 buffer+=char
-                if char=='M':
-                    b = self.ord(self.read())-32
-                    x = self.ord(self.read())-32
-                    y = self.ord(self.read())-32
-                    #TODO handle mouse code ---
-                    buffer+=f'{b};{x};{y}'
-                else:
+                if char=='M':   #mouse
+                    b = self.ord(self.read(bin=True))-32
+                    x = self.ord(self.read(bin=True))-32
+                    y = self.ord(self.read(bin=True))-32
+                    buffer+=f'\x1b[M{b};{x};{y}'
+                    mouse=[b, x, y]
+                else:           #other ansi sequence
                     while char>='0' and char<='9' or char==';':
                         char = self.read()
                         buffer+=char
-
         # Restore the original settings of the terminal
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, filedescriptors)
+        fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
         key=self.keymap.get(str(buffer))
         return key or str(buffer)
 
 class widget():
-    def __init__(self, *args, **kwargs):
-        self.interactions=0
-        self.x=0
-        self.y=0
+    def __init__(self, x=1, y=1, w=1, h=1, fg=7, bg=0, key=None, action=None):
+        self.fg0=7
+        self.bg0=0
+        self.key=key
+        self.action=action
         self.minW=1
         self.minH=1
-        self.w=self.minW
-        self.h=self.minH
-        #self.setSize(1, 1, 1, 1)
         self.t=termcontrol()
         self.kb=termKeyboard()
+        self.setSize(x, y, w, h)
+        self.setColors(fg, bg)
         self.widgetList=[]
+        self.outstream=None #sys.stdout
         self.focus=None
         self.parent=None
 
     def __del__(self):
         pass
 
+    def checkWidgetEvents(self, key, w):
+        if key!='':
+            esc='\x1b'
+            print(f'{self.t.gotoxy(10,19)}  {key.replace(esc, "<")}         ')
+        if w.key==key:
+            if f'{type(self.action)}' in [ "function", "<class 'method'>" ]:
+                self.action()
+            else:
+                print(f'{self.t.gotoxy(10,20)}invalid action for "{key}" type: {type(self.action)}             ')
+        for cw in w.widgetList:
+            cw.checkWidgetEvents(key, cw)
+
+    def guiLoop(self):
+        go=True
+        self.t.disable_cursor()
+        self.t.enable_mouse()
+        buffercache=""
+        while go:
+            buffer=self.draw()
+            if buffer != buffercache:
+                buffercache=buffer
+                print(buffer, end='')
+            #print("\n"*3)
+            key=self.kb.read_keyboard_input()
+            if key=='q':
+                go=False
+            self.checkWidgetEvents(key, self)
+        self.t.enable_cursor()
+        self.t.disable_mouse()
+
     def setColors(self, fg, bg):
         self.fg, self.bg=fg, bg
 
     def setSize(self, x, y, w, h): #should always be okay
-        if x<0:
-            x=0
-        if y<0:
-            y=0
+        if x<1:
+            x=1
+        if y<1:
+            y=1
         scr=self.t.get_terminal_size()
         if w<self.minW:
             w=self.minW
@@ -624,28 +663,36 @@ class widget():
             x=scr['columns']-self.minW
         if y>scr['rows']-self.minH:
             y=scr['rows']-self.minH
-        if w>scr['columns']-x:
-            w=scr['columns']-x
-        if h>scr['rows']-y:
-            h=scr['rows']-y
+        if w>scr['columns']-x+1:
+            w=scr['columns']-x+1
+        if h>scr['rows']-y+1:
+            h=scr['rows']-y+1
         self.x=x
         self.y=y
         self.w=w
         self.h=h
 
     def addWidget(self, widget):
+        widget.parent=self
+        widget.fg0=self.fg
+        widget.bg0=self.bg
         self.widgetList.append(widget)
-        widget.setColors(self.fg, self.bg)
         return self.widgetList[-1]
 
     def resize(self):
         for w in self.widgetList:
             w.resize()
 
-    def draw(self):
+    def drawChildren(self):
         buffer=''
         for w in self.widgetList:
             buffer+=w.draw()
+        return buffer
+
+    def draw(self):
+        buffer=self.drawChildren()
+        if self.outstream:
+            self.outstream.write(buffer)
         return buffer
 
     def setFocus(self):
@@ -664,23 +711,15 @@ class widget():
         pass
 
 class widgetScreen(widget):
-    def __init__(self, x, y, w, h, fg=7, bg=0, termBg=None, theme=None):
-        super().__init__()
-        self.termBg=termBg
+    def __init__(self, x, y, w, h, fg=7, bg=None, style=None):
+        super().__init__(x=x, y=y, w=w, h=h, fg=fg, bg=bg)
         if theme:
-            self.box=boxDraw(style=theme, fg0=fg, bg0=bg, bgColor=self.termBg)
+            self.box=boxDraw(style=style, bgColor=self.bg, bg0=self.bg0)
         else:
             self.box=None
-        self.setColors(fg, bg)
-        self.setSize(x, y, w, h)
+        self.style=style
         self.resize()
         self.feed=self.stream.feed
-
-    def setColor(self, fg, bg):
-        super().setColors(fg, bg)
-        if self.box:
-            self.box.fg0=fg
-            self.box.bg0=bg
 
     def resize(self):
         super().resize()
@@ -695,18 +734,31 @@ class widgetScreen(widget):
         self.screen.mode.add(pyte.modes.LNM)
         self.screen.encoding='utf-8'
         self.stream = pyte.Stream(self.screen)
+        self.stream.write=self.stream.feed
 
     def draw(self):
+        self.fg0=7
+        self.bg0=0
+        if self.parent:
+            self.fg0=self.parent.fg
+            self.bg0=self.parent.bg
+        if self.style in [ 'outside' ]:
+            self.bg0=self.bg
+        if self.style in [ 'inside' ]:
+            self.box.chars=self.box.chars[:4]+' '+self.box.chars[5:]
         buffer=''
         if(self.box):
+            self.box.bg0=self.bg0
             buffer+=self.box.draw(self.x, self.y, self.w, self.h)
-        self.stream.feed(self.t.ansicolor(self.termBg))
-        self.stream.feed(super().draw())
+        self.stream.feed(self.t.ansicolor(self.fg, self.bg))
+        self.stream.feed(super().drawChildren())
         self.stream.feed(self.t.gotoxy(1, self.screen.screen_lines))
         if self.box:
-            buffer+=self.t.pyte_render(self.x+2, self.y+1, self.screen, fg=self.fg, bg=self.termBg)
+            buffer+=self.t.pyte_render(self.x+2, self.y+1, self.screen, fg=self.fg, bg=self.bg)
         else:
-            buffer+=self.t.pyte_render(self.x, self.y, self.screen, fg=self.fg, bg=self.termBg)
+            buffer+=self.t.pyte_render(self.x, self.y, self.screen, fg=self.fg, bg=self.bg)
+        if self.outstream:
+            self.outstream.write(buffer)
         return buffer
 
     def input(self, str, maxlen=50):
@@ -734,9 +786,7 @@ class widgetScreen(widget):
 
 class widgetProgressBar(widget):
     def __init__(self, x, y, w, h, fg=7, bg=0, p0='\u2591', p1='\u2588', note=''):
-        super().__init__()
-        self.setSize(x, y, w, h)
-        self.fg, self.bg=fg, bg
+        super().__init__(x=x, y=y, w=w, h=h, fg=fg, bg=bg)
         self.p0, self.p1=p0,p1
         self.note=note
 
@@ -752,3 +802,98 @@ class widgetProgressBar(widget):
         buffer +=self.p0*int(w-((pct)*w))
         buffer +=f'{self.t.gotoxy(self.x+len(self.note)+int(w/2)-5,self.y)}{progress}/{total}'
         return buffer
+
+class widgetSlider(widget):
+    def __init__(self, x, y, w, min=0, max=100, bg=233, barColor=238, labelColor=244, labelType="int", sliderColor=27, key=None, action=None):
+        super().__init__(x=x, y=y, w=w, h=1, bg=bg, key=key, action=action)
+        self.slider='\u2561\u2592\u255e'
+        self.bar='\u2560\u2550\u2563'
+        self.pos=min
+        self.min=min
+        self.max=max
+        self.barColor=barColor
+        self.labelColor=labelColor
+        self.labelType=labelType
+        self.sliderColor=sliderColor
+
+    def draw(self):
+        def hmsf(s):
+            # Get milliseconds
+            milliseconds = s * 1000 % 1000
+            # Get seconds, minutes, and hours
+            seconds = int(s)
+            minutes = s // 60
+            seconds = s % 60
+            hours = minutes // 60
+            #minutes %= 60
+            return f"{int(minutes):02d}:{int(seconds):02d}"
+        if self.parent:
+            self.fg0=self.parent.fg
+            self.bg0=self.parent.bg
+        LLabel=""
+        RLabel=""
+        if self.labelType=='int':
+            LLabel=f'{self.min}'
+            RLabel=f'{self.max}'
+        elif self.labelType=='time':
+            LLabel=f'{hmsf(self.min)}'
+            RLabel=f'{hmsf(self.max)}' 
+        else:
+            pass
+        barw=self.w-len(LLabel)-len(RLabel)
+        pos=0
+        if (self.max-self.min)>0:
+            pos=self.pos/(self.max-self.min)
+        spos=int(barw*pos)
+        buffer=self.t.gotoxy(self.x, self.y)
+        buffer+=self.t.ansicolor(self.labelColor, self.bg0)
+        buffer+=LLabel
+        buffer+=self.t.ansicolor(self.barColor)
+        buffer+=self.bar[0]
+        buffer+=self.bar[1]*(spos-2)
+        buffer+=self.t.ansicolor(self.sliderColor)
+        buffer+=self.slider
+        buffer+=self.t.ansicolor(self.barColor)
+        buffer+=self.bar[1]*((barw-spos)-2-3-2)
+        buffer+=self.bar[2]
+        buffer+=self.t.ansicolor(self.labelColor)
+        buffer+=RLabel
+        if self.outstream:
+            self.outstream.write(buffer)
+        return buffer
+
+    def setValue(self, value):
+        if value>=self.min and value<=self.max:
+            self.pos=value
+
+class widgetButton(widget):
+    def __init__(self, x, y, w, h, fg=7, bg=None, style='curve', caption='Button', key=None, action=None):
+        super().__init__(x=x, y=y, w=w, h=h, fg=fg, bg=bg, key=key, action=action)
+        self.bg0=0
+        self.fg0=7
+        if theme:
+            if style:
+                self.box=boxDraw(style=style, bgColor=self.bg, bg0=self.bg0)
+        else:
+            self.box=None
+        self.tint=None
+        self.style=style
+        self.caption=caption
+
+    def draw(self):
+        if self.parent:
+            self.fg0=self.parent.fg
+            self.bg0=self.parent.bg
+        buffer=""
+        if self.box:
+            self.box.bg0=self.bg0
+            self.box.tintFrame(self.tint)
+            buffer+=self.box.draw(self.x, self.y, self.w, self.h)
+        buffer+=self.t.gotoxy(self.x+self.w//2-(len(self.caption)//2), self.y+1)
+        buffer+=self.t.ansicolor(self.fg, self.bg)
+        buffer+=self.caption
+        if self.key:
+            buffer +=self.t.gotoxy(self.x+self.w//2-((len(self.key)+2)//2), self.y+2)
+            buffer+=f'[{self.key}]'
+        return buffer
+

@@ -520,7 +520,7 @@ class VidMaker:
             elif engine=='record':
                 temp_wav=f"{self.work_dir}/.wav"
                 #Show script widget, record/pause/play/re-record/accept buttons
-                scriptbox=widgetScreen(20, 10, 65, 22, bg=234, fg=15, termBg=233, theme='curve')
+                scriptbox=widgetScreen(20, 10, 65, 22, bg=234, fg=15, style='curve')
                 scriptbox.feed('\n'.join(page_fit( text_content, 63 )))
                 print(scriptbox.draw())
                 #while not self.file_exists(temp_wav):
@@ -557,7 +557,7 @@ class VidMaker:
             elif type.lower() in ["image", "video"]:
                 verb="Downloaded"
                 while not self.file_exists(file_path):
-                    querybox=widgetScreen(20, 10, 45, 5, bg=234, fg=15, termBg=233, theme='curve')
+                    querybox=widgetScreen(20, 10, 45, 5, bg=234, fg=15, termBg=233, style='curve')
                     buff=f'{self.t.setfg(15)}Please enter new search terms.\n'
                     buff+=f'Script: "{self.t.setfg(11)}{script}{self.t.setfg(15)}"\n'
                     querybox.feed(buff)
