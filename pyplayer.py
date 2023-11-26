@@ -5,7 +5,6 @@ import numpy as np
 from termcontrol import termcontrol, pyteLogger, boxDraw, widget, widgetScreen
 from termcontrol import widgetProgressBar, widgetSlider, widgetButton
 
-
 """
          0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
 U+250x   ─   ━   │   ┃   ┄   ┅   ┆   ┇   ┈   ┉   ┊   ┋   ┌   ┍   ┎   ┏
@@ -28,32 +27,35 @@ STOP=0
 PLAY=1
 RECORD=2
 
-icons={}
-icons['prev']   = ('\u23ee', 'v')
-icons['prev']   = ('\u25ae\u25c0\u25c0', 'v')
-icons['play']   = ('\u25b6', 'p')
-icons['pause']  = ('\u25ae'*2, 'p')
-icons['play/pause']  = ('\u25b6'+'\u25ae'*2, 'p')
-icons['stop']   = ('\u25a0', 's')
-icons['record'] = ('\u25cf', 'r')
-icons['next']   = ('\u23ed', 'x')
-icons['next']   = ('\u25b6\u25b6\u25ae', 'x')
-icons['eject']  = ('\u23cf', 'j')
-icons['random'] = ('RND', 'd')
-icons['repeat'] = ('RPT', 't')
-
 class termplayer(widget):
-    def __init__(self, x=1, y=1, w=80, h=16, record_mode=False, files=[]):
-        super().__init__(x=x, y=y, w=w, h=h)
+    def __init__(self, x=1, y=1, w=80, h=16, mode='play', files=[]): 
         self.player=pyplayer()
-        actions={
-                    'play/pause': self.player.pause,
-                    'stop': self.player.stop,
-                    'record': self.player.record
-                }
+        self.icons={}
+        self.icons['prev']   = {"label":'\u23ee', "key":'[', 'action':self.prev}
+        self.icons['prev']   = {"label":'\u25ae\u25c0\u25c0', "key":'[', 'action':self.prev}
+        self.icons['play']   = {"label":'\u25b6', "key":'P', 'action':self.play}
+        self.icons['pause']  = {"label":'\u25ae'*2, "key":'p', 'action':self.pause}
+        self.icons['play/pause']  = {"label":'\u25b6'+'\u25ae'*2, "key":'p', 'action':self.playpause}
+        self.icons['stop']   = {"label":'\u25a0', "key":'s', 'action':self.stop}
+        self.icons['record'] = {"label":'\u25cf', "key":'r', 'action':self.record}
+        self.icons['next']   = {"label":'\u23ed', "key":']', 'action':self.next}
+        self.icons['next']   = {"label":'\u25b6\u25b6\u25ae', "key":']', 'action':self.next}
+        self.icons['eject']  = {"label":'\u23cf', "key":'j', 'action':self.eject}
+        self.icons['random'] = {"label":'RND', "key":'d', 'action':self.shuffle}
+        self.icons['repeat'] = {"label":'\u238c', "key":'t', 'action':self.repeat}
+        self.icons['repeat'] = {"label":'RPT', "key":'t', 'action':self.repeat}
+        self.icons['seek'] = {"label":'', "key":'k', 'action':self.seek}
+        self.icons['seek-'] = {"label":'\u25c0'*2, "key":'-', 'action':self.seekBack}
+        self.icons['seek+'] = {"label":'\u25b6'*2, "key":'+', 'action':self.seekFwd}
+        self.icons['playlist'] = {"label":'\u2263', "key":'L', 'action':self.togglePlayList}
+        self.icons['denoise'] = {"label":'NOI', "key":'N', 'action':self.denoise}
+        self.icons['denoise'] = {"label":'\u2593\u2591\u2592', "key":'N', 'action':self.denoise}
+
+        super().__init__(x=x, y=y, w=w, h=h)
+        self.showPlayList=False
         self.playlist=files
-        self.record_mode=record_mode
-        if self.record_mode:
+        self.mode=mode
+        if self.mode=='record':
             if len(self.playlist)!=1:
                 print("Record mode must reference one audio filename.")
                 exit(1)
@@ -75,20 +77,29 @@ class termplayer(widget):
         self.playerbox.addWidget(self.infoBox)
         self.timeBox.box.tintFrame('#555')
         self.infoBox.box.tintFrame('#555')
-        btn={}
+        self.slider=widgetSlider(2, 9, self.w-(2*2), 0, self.player.length(), labelType='time' , key='k')
+        self.playerbox.addWidget(self.slider)
+        self.addButtons(mode)
+
+    def addButtons(self,mode):
+        playbuttons=['prev', 'play/pause', 'stop', 'next', '', 'eject', '', 'random', 'repeat', 'playlist']
+        recordbuttons=['seek-', 'play', 'pause', 'stop', 'record', 'seek+', '', 'eject', '', 'denoise']
+        buttons=playbuttons
+        if mode=='record':
+            buttons=recordbuttons
+        else: 
+            buttons=playbuttons
+        self.btn={}
         btnX=2
         btnY=11
         btnW=7
-        btnH=4
-        self.slider=widgetSlider(btnX, 9, self.w-(2*btnX), 0, self.player.length(), labelType='time' , key='k')
-        self.playerbox.addWidget(self.slider)
+        btnH=4 
         x=0
-        for label in ['prev', 'play/pause', 'stop', 'record', 'next', '', 'eject', '', 'random', 'repeat']:
-            if icons.get(label):
-                caption, key=icons[label]
-                action=actions.get(label)
-                btn[label]=widgetButton(x*btnW+btnX, btnY, btnW, btnH, fg=27, bg=233, caption=caption, key=key, action=action)
-                self.playerbox.addWidget(btn[label])
+        for label in buttons:
+            if self.icons.get(label):
+                i=self.icons[label]
+                self.btn[label]=widgetButton(x*btnW+btnX, btnY, btnW, btnH, fg=27, bg=233, caption=i['label'], key=i['key'], action=i['action'])
+                self.playerbox.addWidget(self.btn[label])
             x+=1
 
     def drawBigString(self, s):
@@ -180,21 +191,69 @@ class termplayer(widget):
         self.timeBox.feed(self.drawMultiLine(30-(5*5)-2, 1, timestr))
         self.timeBox.feed(self.t.gotoxy(1, 3))
         if self.player.status==PLAY:
-            i, k=icons['play']
+            i=self.icons['play']
             self.timeBox.feed(self.t.ansicolor(46, 233, bold=True))
-            self.timeBox.feed(i)
+            self.timeBox.feed(i['label'])
         elif self.player.status==RECORD:
-            i, k=icons['record']
+            i=self.icons['record']
             self.timeBox.feed(self.t.ansicolor(196, 233, bold=True))
-            self.timeBox.feed(i)
+            self.timeBox.feed(i['label'])
         else:
-            i, k=icons['stop']
+            i=self.icons['stop']
             self.timeBox.feed(self.t.ansicolor(27, 233, bold=True))
-            self.timeBox.feed(i)
+            self.timeBox.feed(i['label'])
         buffer+=self.playerbox.draw()
         #print(self.anim[self.frame % len(self.anim)])
         self.frame +=1
         return buffer
+
+    def togglePlayList(self):
+        pass
+
+    def next(self):
+        pass
+
+    def prev(self):
+        pass
+
+    def selectFile(self, filename):
+        pass
+
+    def shuffle(self):
+        pass
+
+    def repeat(self):
+        pass
+
+    def seek(self, pos=0):
+        pass
+
+    def seekFwd(self):
+        pass
+
+    def seekBack(self):
+        pass
+
+    def eject(self):
+        pass
+
+    def play(self):
+        self.player.play()
+
+    def pause(self):
+        self.player.pause()
+
+    def playpause(self):
+        self.player.pause()
+
+    def stop(self):
+        self.player.stop()
+
+    def record(self):
+        self.player.record()
+
+    def denoise():
+        pass
 
 class pyplayer:
     def __init__(self):
@@ -326,12 +385,6 @@ class pyplayer:
             #self.pause()
         return self.cursor
 
-    def next(self):
-        pass
-
-    def prev(self):
-        pass
-
     def load(self, filename):
         pass
 
@@ -348,8 +401,10 @@ def main():
     if len(args)==0:
         parser.print_help()
         return
- 
-    tp=termplayer(x=int(options.x), y=int(options.y), record_mode=options.record, files=args)
+    mode='play'
+    if options.record:
+        mode='record'
+    tp=termplayer(x=int(options.x), y=int(options.y), mode=mode, files=args)
     tp.guiLoop()
     return
     p=pyplayer()
