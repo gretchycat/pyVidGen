@@ -640,11 +640,12 @@ class widget():
                 print(buffer, end='')
             #print("\n"*3)
             key=self.kb.read_keyboard_input()
-            if key=='q':
-                go=False
             self.checkWidgetEvents(key, self)
         self.t.enable_cursor()
         self.t.disable_mouse()
+
+    def quit(self):
+        exit(0)
 
     def setColors(self, fg, bg):
         self.fg, self.bg=fg, bg
@@ -708,6 +709,12 @@ class widget():
         pass
 
     def kbEvent(self, ch):
+        pass
+
+    def save(self, f):
+        pass
+
+    def load(self, f):
         pass
 
 class widgetScreen(widget):
