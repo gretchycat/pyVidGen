@@ -54,9 +54,9 @@ class pyplayer:
         if self.status==STOP:
             self.status=PLAY
             self.startTime=time.time()
-            c=int(self.cursor*self.fps)
-            s=int(self.selected*self.fps)
-            sl=int(self.selected_length*self.fps)
+            c=self.get_cursor()
+            s=int(self.selected)
+            sl=int(self.selected_length)
             if sl==0:
                 sd.play(self.buffer[c:], self.fps)
             else:
@@ -72,7 +72,7 @@ class pyplayer:
             length=(time.time()-self.startTime)
             record_buffer=self.record_buffer[:int(length*self.fps)]
             self.startTime=0
-            c=int(self.cursor*self.fps)
+            c=self.get_cursor()
             s=int(self.selected*self.fps)
             sl=int(self.selected_length*self.fps)
             pre, post = [], []
@@ -82,7 +82,7 @@ class pyplayer:
             else:
                 pre=self.buffer[:c]
                 post=self.buffer[c:]
-            self.cursor=(s+(len(record_buffer))/self.fps)
+            self.cursor=s+(len(record_buffer))
             self.selected=0
             self.selected_length=0
             if len(pre)==0:
@@ -93,8 +93,11 @@ class pyplayer:
                 self.buffer=np.concatenate((self.buffer, post))
             self.record_buffer=[]
 
+    def length_time(self):
+        return self.length/self.fps
+
     def length(self):
-        return len(self.buffer)/self.fps
+        return len(self.buffer)
 
     def stop(self):
         self.pause()
@@ -108,18 +111,36 @@ class pyplayer:
             self.startTime=time.time()
             self.record_buffer=sd.rec(self.fps*60*10, self.fps, channels=2)
 
-    def seek(self, time):
+    def seek_time(self, time):
+        self.seek(time*self.fps)
+
+    def seek(self, frame):
         playing=self.status==PLAY
         if playing:
             self.pause()
         if self.status==STOP:
-            if time<0:
-                time=0
-            if time>self.length():
+            if frame<0:
+                frame=0
+            if frame>self.length():
                 time=self.length()
-            self.cursor=time
+            self.cursor=frame
         if playing:
             self.play()
+
+    def seekFwd_time(self, time):
+        self.seekFwd(time*self.fps)
+
+    def seekFwd(self, frames):
+        self.seek(self.cursor-frames)
+
+    def seekBack_time(self, time):
+        self.seekBack(time*self.fps)
+
+    def seekBack(self, frames):
+        self.seek(self.cursor+frames)
+
+    def select_time(self, s, sl):
+        self.select(s*self.fps, sl*self.fps)
 
     def select(self, s, sl):
         if self.status==STOP:
@@ -143,8 +164,9 @@ class pyplayer:
 
     def clear_selected(self):
         self.seek(self.selected)
-        s=int(self.selected*self.fps)
-        sl=int(self.selected_length*self.fps)
+        s=int(self.selected)
+        sl=int(self.selected_length
+               )
         pre=self.buffer[:s]
         post=self.buffer[s+sl:]
         if len(pre)>0:
@@ -163,7 +185,7 @@ class pyplayer:
         if self.cursor>self.length():
             self.cursor=self.length()
             #self.pause()
-        return self.cursor*self.fps
+        return int(self.cursor*self.fps)
 
     def get_cursor_time(self):
         return self.get_cursor()/self.fps

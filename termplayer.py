@@ -316,14 +316,14 @@ class termplayer(widget):
         self.filename=filename
 
     def save(self, filename):
-        super().save(filename)
+        self.player.save(filename)
 
     def quit(self):
         if self.mode=='record':
             #save recording?
             self.save(self.filename)
             pass
-        super().quit()
+        #self.player.quit()
 
     def next(self):
         i=self.playlist.index(self.filename)
@@ -357,13 +357,13 @@ class termplayer(widget):
         self.repeat = not self.repeat
 
     def seek(self, pos=0):
-        self.player.seek(pos)
+        self.player.seek_time(pos)
 
     def seekFwd(self):
-        self.player.seekFwd(10)
+        self.player.seekFwd_time(10)
 
     def seekBack(self):
-        self.player.seekBack(10)
+        self.player.seekBack_time(10)
 
     def eject(self):
         pass
