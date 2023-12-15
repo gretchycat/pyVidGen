@@ -29,7 +29,8 @@ PLAY=1
 RECORD=2
 
 def minsec(s):
-    mins=int(s//60)
+    s=int(s)
+    mins=int(s/60)
     secs=int(s%60)
     return f'{mins:02d}:{secs:02d}'
 
@@ -73,6 +74,7 @@ class termplayer(widget):
             pass
         self.filename=files[0]
         self.player=pyplayer()
+        self.player.endHandler=self.endHandler
         if self.mode=='play':
             self.load(self.filename)
         self.script=script
@@ -115,7 +117,15 @@ class termplayer(widget):
         for label in buttons:
             if self.icons.get(label):
                 i=self.icons[label]
-                self.btn[label]=widgetButton(x*btnW+btnX, btnY, btnW, btnH, fg=27, bg=233, caption=i['label'], key=i['key'], action=i['action'])
+                toggle=None
+                if label in ['shuffle', 'playlist', 'repeat']:
+                    if label=='shuffle':
+                        toggle=not (self.playlist==self.playlistinorder)
+                    if label=='playlist':
+                        toggle=self.showPlayList
+                    if label=='repeat':
+                        toggle=self.repeat
+                self.btn[label]=widgetButton(x*btnW+btnX, btnY, btnW, btnH, fg=27, bg=233, caption=i['label'], key=i['key'], action=i['action'], toggle=toggle)
                 self.playerbox.addWidget(self.btn[label])
             x+=1
 
@@ -206,6 +216,8 @@ class termplayer(widget):
 
     def draw(self):
         t=self.player.get_cursor_time()
+        self.slider.setValue(t)
+        self.slider.setMax(self.player.length_time())
         timestr=self.drawBigString(minsec(t))
         buffer=''
         fg=27
@@ -249,7 +261,6 @@ class termplayer(widget):
                 self.infoBox.feed(f'  Stereo')
             else:
                 self.infoBox.feed(f' Stereo+')
-
         self.timeBox.feed(self.t.ansicolor(fg,233, bold=True))
         self.timeBox.feed(self.t.clear())
         self.timeBox.feed(self.drawMultiLine(30-(5*5)-2, 1, timestr))
@@ -320,10 +331,11 @@ class termplayer(widget):
 
     def quit(self):
         if self.mode=='record':
-            #save recording?
-            self.save(self.filename)
-            pass
-        #self.player.quit()
+            #TODO save prompt
+            if(1):
+                self.save(self.filename)
+        self.stop()
+        quit()
 
     def next(self):
         i=self.playlist.index(self.filename)
@@ -339,13 +351,16 @@ class termplayer(widget):
             i=len(self.playlist)-1
         self.load(self.playlist[i])
 
-    def trackDone(self):
-        if player.status==PLAY:
-            if self.repeat:
-                self.stop()
-                self.play()
+    def endHandler(self):
+        if self.player.status==PLAY:
+            if self.mode=='play':
+                if self.repeat:
+                    self.stop()
+                    self.play()
+                else:
+                    self.next()
             else:
-                self.next()
+                self.player.pause()
 
     def shuffle(self):
         if self.playlist==self.playlistinorder:

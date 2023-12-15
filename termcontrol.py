@@ -825,14 +825,9 @@ class widgetSlider(widget):
 
     def draw(self):
         def hmsf(s):
-            # Get milliseconds
-            milliseconds = s * 1000 % 1000
-            # Get seconds, minutes, and hours
-            seconds = int(s)
-            minutes = s // 60
+            s = int(s)
+            minutes = s / 60
             seconds = s % 60
-            hours = minutes // 60
-            #minutes %= 60
             return f"{int(minutes):02d}:{int(seconds):02d}"
         if self.parent:
             self.fg0=self.parent.fg
@@ -847,21 +842,21 @@ class widgetSlider(widget):
             RLabel=f'{hmsf(self.max)}' 
         else:
             pass
-        barw=self.w-len(LLabel)-len(RLabel)
+        barw=self.w-len(LLabel)-len(RLabel)-2-len(self.slider)-2
         pos=0
         if (self.max-self.min)>0:
             pos=self.pos/(self.max-self.min)
-        spos=int(barw*pos)
+        spos=int((barw)*pos)
         buffer=self.t.gotoxy(self.x, self.y)
         buffer+=self.t.ansicolor(self.labelColor, self.bg0)
         buffer+=LLabel
         buffer+=self.t.ansicolor(self.barColor)
         buffer+=self.bar[0]
-        buffer+=self.bar[1]*(spos-2)
+        buffer+=self.bar[1]*(spos)
         buffer+=self.t.ansicolor(self.sliderColor)
         buffer+=self.slider
         buffer+=self.t.ansicolor(self.barColor)
-        buffer+=self.bar[1]*((barw-spos)-2-3-2)
+        buffer+=self.bar[1]*((barw-spos))
         buffer+=self.bar[2]
         buffer+=self.t.ansicolor(self.labelColor)
         buffer+=RLabel
@@ -872,9 +867,21 @@ class widgetSlider(widget):
     def setValue(self, value):
         if value>=self.min and value<=self.max:
             self.pos=value
+        if value>self.max:
+            self.pos=self.max
+        if value<self.min:
+            self.pos=self.min
+
+    def setMin(self, value):
+        self.min=value
+        self.setValue(self.pos)
+
+    def setMax(self, value):
+        self.max=value
+        self.setValue(self.pos)
 
 class widgetButton(widget):
-    def __init__(self, x, y, w, h, fg=7, bg=None, style='curve', caption='Button', key=None, action=None):
+    def __init__(self, x, y, w, h, fg=7, bg=None, style='curve', caption='Button', key=None, action=None, toggle=None):
         super().__init__(x=x, y=y, w=w, h=h, fg=fg, bg=bg, key=key, action=action)
         self.bg0=0
         self.fg0=7

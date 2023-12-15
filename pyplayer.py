@@ -1,4 +1,5 @@
 import sys,os,pydub,time, random
+from datetime import datetime as dt
 from optparse import OptionParser
 import sounddevice as sd
 import numpy as np
@@ -12,8 +13,10 @@ class pyplayer:
     def __init__(self):
         self.x=1
         self.y=1
+        self.yy=1
         self.status=STOP
         self.fps=48000
+        self.factor=self.fps
         self.channels=1
         self.cursor=0
         self.startTime=0
@@ -26,18 +29,60 @@ class pyplayer:
 
     def load(self, filename):
         sd.stop()
+        self.timer_clear()
         self.cursor=0
+        self.selected=0
+        self.selected_length=0
+        self.record_buffer=[]
         audio=AudioSegment.from_file(filename)
         audio_array=np.array(audio.get_array_of_samples())
         self.fps=audio.frame_rate
+        self.factor=self.fps
         self.channels=audio.channels
         self.sample_width=0 #audio.sample_width
         self.buffer=audio_array
         if self.status==PLAY:
-            sd.play(self.buffer, self.fps)
+            self.stop()
+            self.play()
         return {'title':filename, 'length':audio.duration_seconds, 'bitrate':self.fps, 'quality':self.sample_width, 'channels':self.channels}
 
+    def timer_now(self):
+        return dt.now().timestamp()
+
+    def timer_start(self, factor=1, offset=0):
+        self.factor=factor
+        self.startTime=self.timer_now()+offset
+
+    def timer_get(self):
+        if self.startTime>0:
+            return (self.timer_now()-self.startTime)*self.factor
+        else:
+            return 0
+
+    def timer_clear(self):
+        t=self.timer_get()
+        self.startTime=0
+        return t
+
     def save(self, filename):
+        # Validate audio data
+        if not isinstance(self.buffer, np.ndarray):
+            raise ValueError("audio_data must be a NumPy array")
+        if self.buffer.dtype not in [np.float32, np.int16]:
+            raise ValueError("audio data must be float32 or int16")
+        buf=self.buffer
+        # Normalize audio data to appropriate range
+        if self.buffer.dtype == np.float32:
+            buf = np.clip(self.buffer, -1.0, 1.0) * np.iinfo(np.int16).max
+        #else:
+        buf = buf.astype(np.int16)
+
+        # Create a pydub AudioSegment from the NumPy array
+        if self.length():
+            audio_segment = pydub.AudioSegment(buf.tobytes(),
+                frame_rate=self.fps, sample_width=16//8, channels=self.channels)
+            audio_segment.export(filename)
+
         pass
 
     def callback(self, indata, frames, time, status):
@@ -50,10 +95,25 @@ class pyplayer:
         elif self.status==STOP:
             self.play()
 
+    def record(self):
+        if self.status==STOP:
+            self.status=RECORD
+            self.timer_start(factor=self.fps)
+            c=self.cursor
+            s=int(self.selected)
+            sl=int(self.selected_length)
+            if sl>0:
+                self.pre=self.buffer[:s]
+                self.post=self.buffer[s+sl:]
+            else:
+                self.pre=self.buffer[:c]
+                self.post=self.buffer[c:]
+            self.record_buffer=sd.rec(self.fps*60*10, self.fps, channels=self.channels)
+
     def play(self):
         if self.status==STOP:
             self.status=PLAY
-            self.startTime=time.time()
+            self.timer_start(factor=self.fps, offset=-int(self.get_cursor()/self.fps))
             c=self.get_cursor()
             s=int(self.selected)
             sl=int(self.selected_length)
@@ -66,50 +126,42 @@ class pyplayer:
         if self.status==PLAY:
             self.status=STOP
             sd.stop()
+            self.timer_clear()
         elif self.status==RECORD:
             self.status=STOP
             sd.stop()
-            length=(time.time()-self.startTime)
-            record_buffer=self.record_buffer[:int(length*self.fps)]
-            self.startTime=0
-            c=self.get_cursor()
-            s=int(self.selected*self.fps)
-            sl=int(self.selected_length*self.fps)
-            pre, post = [], []
-            if sl>0:
-                pre=self.buffer[:s]
-                post=self.buffer[s+sl:]
-            else:
-                pre=self.buffer[:c]
-                post=self.buffer[c:]
-            self.cursor=s+(len(record_buffer))
+            length=int(self.timer_get())
+            record_buffer=self.record_buffer[:length] #truncate buffer
+            self.cursor=len(self.pre)+(len(record_buffer))
             self.selected=0
             self.selected_length=0
-            if len(pre)==0:
+            if len(self.pre)==0:
                 self.buffer=record_buffer
             else:
-                self.buffer=np.concatenate((pre, record_buffer))
-            if len(post)>0:
-                self.buffer=np.concatenate((self.buffer, post))
+                self.buffer=np.concatenate((self.pre, record_buffer))
+            if len(self.post)>0:
+                self.buffer=np.concatenate((self.buffer, self.post))
+            self.pre, self.post = [], []
             self.record_buffer=[]
+            self.timer_clear()
 
     def length_time(self):
-        return self.length/self.fps
+        return self.length()/self.fps
 
     def length(self):
-        return len(self.buffer)
+        if self.status==RECORD:
+            if self.timer_get():
+                return int(self.timer_get()+len(self.buffer)/self.channels)
+            return 0
+        else:
+            return int(len(self.buffer)/self.channels)
 
     def stop(self):
         self.pause()
         self.selected=0
+        self.selected_length=0
         self.cursor=0
-        self.startTime=0
-
-    def record(self):
-        if self.status==STOP:
-            self.status=RECORD
-            self.startTime=time.time()
-            self.record_buffer=sd.rec(self.fps*60*10, self.fps, channels=2)
+        self.timer_clear()
 
     def seek_time(self, time):
         self.seek(time*self.fps)
@@ -124,6 +176,8 @@ class pyplayer:
             if frame>self.length():
                 time=self.length()
             self.cursor=frame
+        if self.cursor>self.length():
+            self.cursor=self.length()
         if playing:
             self.play()
 
@@ -131,13 +185,13 @@ class pyplayer:
         self.seekFwd(time*self.fps)
 
     def seekFwd(self, frames):
-        self.seek(self.cursor-frames)
+        self.seek(self.cursor+frames)
 
     def seekBack_time(self, time):
         self.seekBack(time*self.fps)
 
     def seekBack(self, frames):
-        self.seek(self.cursor+frames)
+        self.seek(self.cursor-frames)
 
     def select_time(self, s, sl):
         self.select(s*self.fps, sl*self.fps)
@@ -180,12 +234,18 @@ class pyplayer:
             else:
                 self.buffer=[]
 
-    def get_cursor(self): #TODO FIXME 
-        self.cursor=time.time()-self.startTime
-        if self.cursor>self.length():
-            self.cursor=self.length()
-            #self.pause()
-        return int(self.cursor*self.fps)
+    def get_cursor(self): #TODO FIXME find authoritative value
+        if self.cursor>=self.length() and self.status==PLAY:
+            if self.endHandler:
+                self.endHandler()
+        t=self.timer_get()
+        if t>0:
+            self.cursor=int(t)
+            if self.cursor>self.length():
+                self.cursor=self.length()
+        if self.status==RECORD:
+            return self.cursor+len(self.pre)/self.channels
+        return self.cursor
 
     def get_cursor_time(self):
         return self.get_cursor()/self.fps
