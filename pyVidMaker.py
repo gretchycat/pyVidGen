@@ -557,7 +557,7 @@ class VidMaker:
             elif type.lower() in ["image", "video"]:
                 verb="Downloaded"
                 while not self.file_exists(file_path):
-                    querybox=widgetScreen(20, 10, 45, 5, bg=234, fg=15, termBg=233, style='curve')
+                    querybox=widgetScreen(20, 10, 45, 5, bg=234, fg=15,  style='curve')
                     buff=f'{self.t.setfg(15)}Please enter new search terms.\n'
                     buff+=f'Script: "{self.t.setfg(11)}{script}{self.t.setfg(15)}"\n'
                     querybox.feed(buff)
@@ -1458,7 +1458,7 @@ class VidMaker:
                 merged_config[section].update(read[section])
         return merged_config
 
-    def write_config_dict(config_dict, config_file_path):
+    def write_config_dict(self, config_dict, config_file_path):
         """Writes a config dict back to the config file.
         Args:
             config_dict: The config dict to write.
