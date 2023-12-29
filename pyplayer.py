@@ -1,8 +1,14 @@
 import sys,os,pydub,time, random
 from datetime import datetime as dt
 from optparse import OptionParser
-import sounddevice as sd
-import numpy as np
+try:
+    import sounddevice as sd
+except:
+    print('missing sounddevice library.')
+try:
+    import numpy as np
+except:
+    print('missing numpy library.')
 from pydub import AudioSegment
 
 STOP=0

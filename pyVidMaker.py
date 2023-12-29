@@ -4,7 +4,7 @@ import os, json, mistune, xml.etree.ElementTree as ET, binascii, fcntl, termios
 import string, xml.dom.minidom as minidom, pyte, configparser, pydub, re, array
 from termcontrol import termcontrol, pyteLogger, boxDraw, widgetScreen, widgetProgressBar
 from pprint import pprint
-import sounddevice
+#import sounddevice
 from optparse import OptionParser
 from pathlib import Path 
 from gtts import gTTS
