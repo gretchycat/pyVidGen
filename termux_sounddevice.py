@@ -1,5 +1,5 @@
 import sys,os,pydub
-class tsd():
+class termux_sd():
     def __init__(self):
         self.tmux_play=''
         self.tmux_record=''
@@ -10,7 +10,7 @@ class tsd():
             lastaction='play'
         pass
 
-    def record(self, size, fps, channels=1):
+    def rec(self, size, fps, channels=1):
         if lastaction=='':
             lastaction='record'
         pass
