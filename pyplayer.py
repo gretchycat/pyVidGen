@@ -6,6 +6,7 @@ try:
     import sounddevice as sd
 except:
     print('missing sounddevice library.')
+    from termux_sounddevice import termux_sd as sd
 try:
     import numpy as np
 except:
