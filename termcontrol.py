@@ -470,12 +470,21 @@ class boxDraw:
     def setCharacters(self):
         self.chars=chars
 
-    def draw(self, x, y, w, h, fill=True):
+    def invert(self, cl):
+        c=cl.copy()
+        for i in range(0, len(cl)):
+            c[i]=cl[8-i]
+        return c
+
+    def draw(self, x, y, w, h, fill=True, invert=False):
         if(w<3): w=3
         if(h<3): h=3
         colors=self.frameColors
         if(self.tinted):
             colors=self.tinted
+        if invert:
+            colors=self.invert(colors)
+            pass
         buff=self.term.gotoxy(x,y)
         buff+=self.term.ansicolor(colors[0], self.bg0)+self.chars[0]
         buff+=self.term.ansicolor(colors[1], self.bg0)+self.chars[1]*(w-2)
@@ -600,6 +609,7 @@ class widget():
     def __init__(self, x=1, y=1, w=1, h=1, fg=7, bg=0, key=None, action=None):
         self.fg0=7
         self.bg0=0
+        self.invert=False
         self.key=key
         self.action=action
         self.minW=1
@@ -622,6 +632,7 @@ class widget():
             print(f'{self.t.gotoxy(10,19)}  {key.replace(esc, "<")}         ')
         if w.key==key:
             if f'{type(self.action)}' in [ "function", "<class 'method'>" ]:
+                self.invert=True
                 self.action()
             else:
                 print(f'{self.t.gotoxy(10,20)}invalid action for "{key}" type: {type(self.action)}             ')
@@ -885,6 +896,7 @@ class widgetButton(widget):
         super().__init__(x=x, y=y, w=w, h=h, fg=fg, bg=bg, key=key, action=action)
         self.bg0=0
         self.fg0=7
+        self.invert=False
         if theme:
             if style:
                 self.box=boxDraw(style=style, bgColor=self.bg, bg0=self.bg0)
@@ -902,7 +914,8 @@ class widgetButton(widget):
         if self.box:
             self.box.bg0=self.bg0
             self.box.tintFrame(self.tint)
-            buffer+=self.box.draw(self.x, self.y, self.w, self.h)
+            buffer+=self.box.draw(self.x, self.y, self.w, self.h, invert=self.invert)
+        self.invert=False
         buffer+=self.t.gotoxy(self.x+self.w//2-(len(self.caption)//2), self.y+1)
         buffer+=self.t.ansicolor(self.fg, self.bg)
         buffer+=self.caption

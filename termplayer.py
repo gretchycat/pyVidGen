@@ -269,6 +269,7 @@ class termplayer(widget):
             i=self.icons['play']
             self.timeBox.feed(self.t.ansicolor(46, 233, bold=True))
             self.timeBox.feed(i['label'])
+               
         elif self.player.status==RECORD:
             i=self.icons['record']
             self.timeBox.feed(self.t.ansicolor(196, 233, bold=True))
@@ -277,6 +278,21 @@ class termplayer(widget):
             i=self.icons['stop']
             self.timeBox.feed(self.t.ansicolor(27, 233, bold=True))
             self.timeBox.feed(i['label'])
+        rcolor=234
+        scolor=234
+        if self.repeat:
+            rcolor=27
+        if self.playlist!=self.playlistinorder:
+            scolor=27
+        i=self.icons['repeat']
+        self.timeBox.feed(self.t.gotoxy(1, 4))
+        self.timeBox.feed(self.t.ansicolor(rcolor, 233, bold=True))
+        self.timeBox.feed(i['label'])
+        i=self.icons['shuffle']
+        self.timeBox.feed(self.t.gotoxy(1, 5))
+        self.timeBox.feed(self.t.ansicolor(scolor, 233, bold=True))
+        self.timeBox.feed(i['label'])
+
         buffer+=self.playerbox.draw()
         if self.showPlayList:
             self.playlistbox.feed(f'{self.t.clear()}')
@@ -399,10 +415,10 @@ class termplayer(widget):
         self.player.record()
 
     def denoise(self):
-        pass
+        self.player.denoise()
 
     def normalize(self):
-        pass
+        self.player.normalize()
 
 def main():
     parser=OptionParser(usage="usage: %prog [options] AUDIO_FILES")
