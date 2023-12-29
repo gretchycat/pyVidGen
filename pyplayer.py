@@ -1,7 +1,6 @@
 import sys,os,pydub,time, random
 from datetime import datetime as dt
 from optparse import OptionParser
-<<<<<<< Updated upstream
 try:
     import sounddevice as sd
 except:
@@ -11,12 +10,6 @@ try:
     import numpy as np
 except:
     print('missing numpy library.')
-=======
-import sounddevice as sd
-import numpy as np
-import scipy.signal as sp
-import noisereduce as nr
->>>>>>> Stashed changes
 from pydub import AudioSegment
 
 STOP=0
