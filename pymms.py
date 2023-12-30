@@ -128,7 +128,7 @@ def audacity_like_filter(data, sample_rate, channels=1):
     return filtered_data.astype('float32')
     pass
 
-class pyplayer:
+class pymms:
     def __init__(self):
         self.x=1
         self.y=1

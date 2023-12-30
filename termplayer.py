@@ -1,6 +1,6 @@
 import sys,os,time, random
 from optparse import OptionParser
-from pyplayer import pyplayer
+from pymms import pymms
 from termcontrol import termcontrol, pyteLogger, boxDraw, widget, widgetScreen
 from termcontrol import widgetProgressBar, widgetSlider, widgetButton
 
@@ -73,7 +73,7 @@ class termplayer(widget):
         else:
             pass
         self.filename=files[0]
-        self.player=pyplayer()
+        self.player=pymms()
         self.player.endHandler=self.endHandler
         if self.mode=='play':
             self.load(self.filename)
