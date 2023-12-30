@@ -200,6 +200,10 @@ class pyplayer:
                 frame_rate=self.fps, sample_width=16//8, channels=self.channels)
             audio_segment.export(filename)
 
+    def callback(self, indata, frames, time, status):
+        self.cursor=frames
+        self.time=time
+
     def playpause(self):
         if self.status in [ PLAY, RECORD ]:
             self.pause()
