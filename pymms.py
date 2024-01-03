@@ -154,7 +154,7 @@ class pymms:
         self.selected_length=0
         self.record_buffer=[]
         audio=AudioSegment.from_file(filename)
-        audio_array=np.array(audio.get_array_of_samples())
+        audio_array=audio.get_array_of_samples()
         self.fps=audio.frame_rate
         self.factor=self.fps
         self.channels=audio.channels
@@ -185,15 +185,15 @@ class pymms:
 
     def save(self, filename):
         # Validate audio data
-        if not isinstance(self.buffer, np.ndarray):
-            raise ValueError("audio_data must be a NumPy array")
-        if self.buffer.dtype not in [np.float32, np.int16]:
-            raise ValueError("audio data must be float32 or int16")
+        #if not isinstance(self.buffer, np.ndarray):
+        #    raise ValueError("audio_data must be a NumPy array")
+        #if self.buffer.dtype not in [np.float32, np.int16]:
+        #    raise ValueError("audio data must be float32 or int16")
         buf=self.buffer
         # Normalize audio data to appropriate range
-        if self.buffer.dtype == np.float32:
-            buf = np.clip(self.buffer, -1.0, 1.0) * np.iinfo(np.int16).max
-        buf = buf.astype(np.int16)
+        #if self.buffer.dtype == np.float32:
+        #    buf = np.clip(self.buffer, -1.0, 1.0) * np.iinfo(np.int16).max
+        #buf = buf.astype(np.int16)
         # Create a pydub AudioSegment from the NumPy array
         if self.length():
             audio_segment = pydub.AudioSegment(buf.tobytes(),
@@ -221,6 +221,7 @@ class pymms:
                 self.post=self.buffer[c:]
             self.record_buffer=sd.rec(self.fps*60*10, self.fps, channels=self.channels)
 
+
     def play(self):
         if self.status==STOP:
             self.status=PLAY
@@ -243,17 +244,17 @@ class pymms:
             sd.stop()
             length=int(self.timer_get())
             record_buffer=self.record_buffer[:length] #truncate buffer
-            window = np.hanning(self.record_buffer.shape[0])[:,None]
-            self.record_buffer=self.record_buffer * window
+            #window = np.hanning(self.record_buffer.shape[0])[:,None]
+            #self.record_buffer=self.record_buffer * window
             self.cursor=len(self.pre)+(len(record_buffer))
             self.selected=0
             self.selected_length=0
             if len(self.pre)==0:
                 self.buffer=record_buffer
             else:
-                self.buffer=np.concatenate((self.pre, record_buffer))
+                self.buffer=self.pre+record_buffer #np.concatenate((self.pre, record_buffer))
             if len(self.post)>0:
-                self.buffer=np.concatenate((self.buffer, self.post))
+                self.buffer=self.buffer+self.post #np.concatenate((self.buffer, self.post))
             self.pre, self.post = [], []
             self.record_buffer=[]
             self.timer_clear()
@@ -338,7 +339,7 @@ class pymms:
         post=self.buffer[s+sl:]
         if len(pre)>0:
             if len(post)>0:
-                self.buffer=np.concatenate((pre, post))
+                self.buffer=pre+post #np.concatenate((pre, post))
             else:
                 self.buffer=pre
         else:
