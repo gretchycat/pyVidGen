@@ -1,57 +1,63 @@
 import sys,os,shutil,pydub,termux
+from pydub import AudioSegment
+
+termux_play=shutil.which('termux-media-player')
+termux_record=shutil.which('termux-microphone-record')
+termux_api=os.environ.get('TERMUX_API_VERSION')
+record_temp_file='._rec.wav'
+play_temp_file='._play.wav'
+err=False
+if not termux_api:
+    err=True
+    print('termux api is not installed.')
+if not termux_play:
+    err=True
+    print('Missing termux-media-player')
+if not termux_record:
+    err=True
+    print('Missing termux-microphone-record')
+if not err:
+    print('termux OK')
+
+else:
+    lastaction='ERROR'
+ 
 class termux_audio():
     def __init__(self):
-        self.termux_play=shutil.which('termux-media-player')
-        self.termux_record=shutil.which('termux-microphone-record')
-        self.termux_api=os.environ.get('TERMUX_API_VERSION')
-        err=False
-        if not self.termux_api:
-            err=True
-            print('termux api is not installed.')
-        if not self.termux_play:
-            err=True
-            print('Missing termux-media-player')
-        if not self.termux_record:
-            err=True
-            print('Missing termux-microphone-record')
-        lastaction=''
-        if not err:
-            print('termux OK')
-        else:
-            lastaction='ERROR'
-        buffer=[]
-        record_buffer=[]
+        self.lastaction=''
+        self.buffer=[]
+        self.record_buffer=[]
 
     def play(self, buffer, fps, channels=1):
-        if lastaction=='':
-            lastaction='play'
+        if self.lastaction=='':
+            audio_segment = pydub.AudioSegment(buffer,
+                frame_rate=fps, sample_width=16//8, channels=channels)
+            audio_segment.export(play_temp_file)
+            self.play_file(play_temp_file)
+            self.lastaction='play'
 
     def play_file(self, fn):
-        if lastaction=='':
-            lastaction='play'
+        termux.Media.play(fn)
 
     def rec(self, size, fps, channels=1):
-        if lastaction=='':
-            lastaction='record'
+        if self.lastaction=='':
+            self.rec_file(record_temp_file, fps=fps)
+            self.lastaction='record'
+        return self.record_buffer
+
+    def rec_file(self, fn, fps=44100):
+        termux.Microphone.record(fn, rate=44100)
 
     def stop(self):
-        if lastaction=='play':
-            lastaction=''
-        elif lastaction=='record':
-            lastaction=''
-
-    def pause(self):
-        if lastaction=='play':
-            lastaction=''
-        elif lastaction=='record':
-            self.stop()
-
-    def load(self, fn):
-        pass
-
-    def save(self, fn):
-        pass
-
-    def merge(buffer, add_buffer, time):
-        pass
+        if self.lastaction=='play':
+            termux.Media.stop()
+            os.remove(play_temp_file)
+            #rm play_temp_file
+            self.lastaction=''
+        elif self.lastaction=='record':
+            termux.Microphone.stop()
+            #rm record_temp_file
+            self.record_buffer=AudioSegment.from_file(record_temp_file)
+            #os.remove(record_temp_file)
+            self.lastaction=''
 

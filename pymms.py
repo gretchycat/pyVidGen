@@ -5,7 +5,8 @@ try:
     import sounddevice as sd
 except:
     print('missing sounddevice library.')
-    from termux_audio import termux_audio as sd
+    from termux_audio import termux_audio
+    sd=termux_audio()
 try:
     import numpy as np
 except:
@@ -189,14 +190,14 @@ class pymms:
         #    raise ValueError("audio_data must be a NumPy array")
         #if self.buffer.dtype not in [np.float32, np.int16]:
         #    raise ValueError("audio data must be float32 or int16")
-        buf=self.buffer
+        #buf=self.buffer
         # Normalize audio data to appropriate range
         #if self.buffer.dtype == np.float32:
         #    buf = np.clip(self.buffer, -1.0, 1.0) * np.iinfo(np.int16).max
         #buf = buf.astype(np.int16)
         # Create a pydub AudioSegment from the NumPy array
         if self.length():
-            audio_segment = pydub.AudioSegment(buf.tobytes(),
+            audio_segment = AudioSegment(self.buffer,
                 frame_rate=self.fps, sample_width=16//8, channels=self.channels)
             audio_segment.export(filename)
 
