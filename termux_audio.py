@@ -28,6 +28,12 @@ class termux_audio():
         self.buffer=[]
         self.record_buffer=[]
 
+    def play_file(self, fn):
+        termux.Media.play(fn)
+
+    def rec_file(self, fn, fps=44100):
+        termux.Microphone.record(fn, rate=44100)
+
     def play(self, buffer, fps, channels=1):
         if self.lastaction=='':
             audio_segment = pydub.AudioSegment(buffer,
@@ -36,28 +42,22 @@ class termux_audio():
             self.play_file(play_temp_file)
             self.lastaction='play'
 
-    def play_file(self, fn):
-        termux.Media.play(fn)
-
     def rec(self, size, fps, channels=1):
         if self.lastaction=='':
             self.rec_file(record_temp_file, fps=fps)
             self.lastaction='record'
         return self.record_buffer
 
-    def rec_file(self, fn, fps=44100):
-        termux.Microphone.record(fn, rate=44100)
-
     def stop(self):
         if self.lastaction=='play':
             termux.Media.stop()
             os.remove(play_temp_file)
-            #rm play_temp_file
             self.lastaction=''
         elif self.lastaction=='record':
             termux.Microphone.stop()
-            #rm record_temp_file
             self.record_buffer=AudioSegment.from_file(record_temp_file)
             #os.remove(record_temp_file)
             self.lastaction=''
 
+    def  save(self, filename, buffer, length, fps, channels):
+        pass

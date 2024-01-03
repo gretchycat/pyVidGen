@@ -1,16 +1,15 @@
 import sys,os,pydub,time, random
 from datetime import datetime as dt
 from optparse import OptionParser
+from sounddevice_audio import sounddevice_audio
 try:
-    import sounddevice as sd
+    sd=sounddevice_audio()
+    import numpy as np
+    from scipy import signal as sp
 except:
-    print('missing sounddevice library.')
+    print('missing sounddevice, numpy or scipy libraries.')
     from termux_audio import termux_audio
     sd=termux_audio()
-try:
-    import numpy as np
-except:
-    print('missing numpy library.')
 from pydub import AudioSegment
 
 STOP=0
@@ -185,21 +184,7 @@ class pymms:
         return t
 
     def save(self, filename):
-        # Validate audio data
-        #if not isinstance(self.buffer, np.ndarray):
-        #    raise ValueError("audio_data must be a NumPy array")
-        #if self.buffer.dtype not in [np.float32, np.int16]:
-        #    raise ValueError("audio data must be float32 or int16")
-        #buf=self.buffer
-        # Normalize audio data to appropriate range
-        #if self.buffer.dtype == np.float32:
-        #    buf = np.clip(self.buffer, -1.0, 1.0) * np.iinfo(np.int16).max
-        #buf = buf.astype(np.int16)
-        # Create a pydub AudioSegment from the NumPy array
-        if self.length():
-            audio_segment = AudioSegment(self.buffer.tobytes(),
-                frame_rate=self.fps, sample_width=16//8, channels=self.channels)
-            audio_segment.export(filename)
+        return sd.save(filename, self.buffer, self.length(), self.fps, self.channels)
 
     def playpause(self):
         if self.status in [ PLAY, RECORD ]:
@@ -221,7 +206,6 @@ class pymms:
                 self.pre=self.buffer[:c]
                 self.post=self.buffer[c:]
             self.record_buffer=sd.rec(self.fps*60*10, self.fps, channels=self.channels)
-
 
     def play(self):
         if self.status==STOP:
@@ -245,17 +229,24 @@ class pymms:
             sd.stop()
             length=int(self.timer_get())
             record_buffer=self.record_buffer[:length] #truncate buffer
-            #window = np.hanning(self.record_buffer.shape[0])[:,None]
-            #self.record_buffer=self.record_buffer * window
+            if np and False:
+                window = np.hanning(record_buffer.shape[0])[:,None]
+                record_buffer=record_buffer * window
             self.cursor=len(self.pre)+(len(record_buffer))
             self.selected=0
             self.selected_length=0
             if len(self.pre)==0:
                 self.buffer=record_buffer
             else:
-                self.buffer=self.pre+record_buffer #np.concatenate((self.pre, record_buffer))
+                if np:
+                    self.buffer=np.concatenate((self.pre, record_buffer))
+                else:
+                    self.buffer=self.pre+record_buffer 
             if len(self.post)>0:
-                self.buffer=self.buffer+self.post #np.concatenate((self.buffer, self.post))
+                if np:
+                    self.buffer=np.concatenate((self.buffer, self.post))
+                else:
+                    self.buffer=self.buffer+self.post
             self.pre, self.post = [], []
             self.record_buffer=[]
             self.timer_clear()
@@ -340,7 +331,10 @@ class pymms:
         post=self.buffer[s+sl:]
         if len(pre)>0:
             if len(post)>0:
-                self.buffer=pre+post #np.concatenate((pre, post))
+                if np:
+                    self.buffer=np.concatenate((pre, post))
+                else:
+                    self.buffer=pre+post
             else:
                 self.buffer=pre
         else:
@@ -366,8 +360,8 @@ class pymms:
         return self.get_cursor()/self.fps
 
     def denoise(self):
-        self.buffer = audacity_like_filter(self.buffer, self.fps)
-        #self.buffer = ideal_bandpass_filter(self.buffer, 100, 500, self.fps).real
+        #self.buffer = audacity_like_filter(self.buffer, self.fps)
+        self.buffer = ideal_bandpass_filter(self.buffer, 100, 5000, self.fps).real
         #self.buffer = butterworth_filter(self.buffer, 500, 2, self.fps)
 
     def normalize(self):
