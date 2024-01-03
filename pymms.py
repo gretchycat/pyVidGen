@@ -197,7 +197,7 @@ class pymms:
         #buf = buf.astype(np.int16)
         # Create a pydub AudioSegment from the NumPy array
         if self.length():
-            audio_segment = AudioSegment(self.buffer,
+            audio_segment = AudioSegment(self.buffer.tobytes(),
                 frame_rate=self.fps, sample_width=16//8, channels=self.channels)
             audio_segment.export(filename)
 
