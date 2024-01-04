@@ -61,7 +61,7 @@ class termux_audio():
             #os.remove(record_temp_file)
             self.lastaction=''
 
-    def  save(self, filename, buffer, length):
+    def save(self, filename, buffer, length):
         pass
 
     def setAudioProperties(self, buffer, fps, channels):
