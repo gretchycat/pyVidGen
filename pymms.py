@@ -230,7 +230,14 @@ class pymms:
         elif self.status==RECORD:
             self.status=STOP
             sd.stop()
+            if len(self.record_buffer)==0:
+                self.record_buffer=sd.record_buffer.get_array_of_samples()
+                self.fps=sd.record_buffer.frame_rate
+                self.channels=sd.record_buffer.channels
+                self.factor=self.fps
+            print(f"buffer:{len(self.record_buffer)}")
             length=int(self.timer_get())
+            print(f"Length:{length}")
             record_buffer=self.record_buffer[:length] #truncate buffer
             if np and False:
                 window = np.hanning(record_buffer.shape[0])[:,None]
