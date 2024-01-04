@@ -24,8 +24,10 @@ class sounddevice_audio():
     def save(self, filename, buffer, length):
         # Validate audio data
         if not isinstance(buffer, np.ndarray):
+            return
             raise ValueError("audio_data must be a NumPy array")
         if buffer.dtype not in [np.float32, np.int16, np.float64]:
+            return
             raise ValueError(f"audio data must be float64, float32 or int16 ({buffer.dtype})")
         buf=buffer
         # Normalize audio data to appropriate range
