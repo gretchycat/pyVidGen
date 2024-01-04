@@ -134,7 +134,7 @@ class pymms:
         self.y=1
         self.yy=1
         self.status=STOP
-        self.fps=48000
+        self.fps=44100
         self.factor=self.fps
         self.channels=1
         self.cursor=0
@@ -160,6 +160,7 @@ class pymms:
         self.channels=audio.channels
         self.sample_width=0 #audio.sample_width
         self.buffer=audio_array
+        sd.setAudioProperties(self.buffer, self.fps, self.channels)
         if self.status==PLAY:
             self.stop()
             self.play()
@@ -184,7 +185,7 @@ class pymms:
         return t
 
     def save(self, filename):
-        return sd.save(filename, self.buffer, self.length(), self.fps, self.channels)
+        return sd.save(filename, self.buffer, self.length())
 
     def playpause(self):
         if self.status in [ PLAY, RECORD ]:
@@ -194,6 +195,7 @@ class pymms:
 
     def record(self):
         if self.status==STOP:
+            sd.setAudioProperties(self.buffer, self.fps, self.channels)
             self.status=RECORD
             self.timer_start(factor=self.fps)
             c=self.cursor

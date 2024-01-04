@@ -4,6 +4,9 @@ from pydub import AudioSegment
 
 class sounddevice_audio():
     def __init__(self):
+        self.fps=44100
+        self.channels=1
+        self.buffer=[]
         return None
 
     def play(self, buffer, fps, channels=1):
@@ -18,7 +21,7 @@ class sounddevice_audio():
     def wait(self):
         return sd.wait()
 
-    def save(self, filename, buffer, length, fps, channels):
+    def save(self, filename, buffer, length):
         # Validate audio data
         if not isinstance(buffer, np.ndarray):
             raise ValueError("audio_data must be a NumPy array")
@@ -32,6 +35,10 @@ class sounddevice_audio():
         # Create a pydub AudioSegment from the NumPy array
         if length>0:
             audio_segment = AudioSegment(buf.tobytes(),
-                frame_rate=fps, sample_width=16//8, channels=channels)
+                frame_rate=self.fps, sample_width=16//8, channels=self.channels)
             audio_segment.export(filename)
 
+    def setAudioProperties(self, buffer, fps, channels):
+        self.buffer=buffer
+        self.fps=fps
+        self.channels=channels

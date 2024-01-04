@@ -27,6 +27,8 @@ class termux_audio():
         self.lastaction=''
         self.buffer=[]
         self.record_buffer=[]
+        self.fps=44100
+        self.channels=1
 
     def play_file(self, fn):
         termux.Media.play(fn)
@@ -59,5 +61,10 @@ class termux_audio():
             #os.remove(record_temp_file)
             self.lastaction=''
 
-    def  save(self, filename, buffer, length, fps, channels):
+    def  save(self, filename, buffer, length):
         pass
+
+    def setAudioProperties(self, buffer, fps, channels):
+        self.buffer=buffer
+        self.fps=fps
+        self.channels=channels
