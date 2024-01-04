@@ -27,14 +27,15 @@ class termux_audio():
         self.lastaction=''
         self.buffer=[]
         self.record_buffer=[]
-        self.fps=44100
+        self.fps=24000
         self.channels=1
 
     def play_file(self, fn):
         termux.Media.play(fn)
 
-    def rec_file(self, fn, fps=44100):
-        termux.Microphone.record(fn, rate=44100)
+    def rec_file(self, fn, fps=24000):
+        self.fps=fps
+        termux.Microphone.record(fn, rate=fps)
 
     def play(self, buffer, fps, channels=1):
         if self.lastaction=='':
@@ -52,7 +53,7 @@ class termux_audio():
 
     def stop(self):
         if self.lastaction=='play':
-            termux.Media.stop()
+            termux.Media.control("stop")
             os.remove(play_temp_file)
             self.lastaction=''
         elif self.lastaction=='record':

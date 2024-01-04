@@ -135,7 +135,7 @@ class pymms:
         self.y=1
         self.yy=1
         self.status=STOP
-        self.fps=44100
+        self.fps=24000
         self.factor=self.fps
         self.channels=1
         self.cursor=0
