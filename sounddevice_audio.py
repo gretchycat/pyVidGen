@@ -1,5 +1,9 @@
-import sounddevice as sd
-import numpy as np
+try:
+    import sounddevice as sd
+    import numpy as np
+except:
+    pass
+
 from pydub import AudioSegment
 
 class sounddevice_audio():

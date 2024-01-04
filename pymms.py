@@ -2,6 +2,7 @@ import sys,os,pydub,time, random
 from datetime import datetime as dt
 from optparse import OptionParser
 from sounddevice_audio import sounddevice_audio
+np=None
 try:
     sd=sounddevice_audio()
     import numpy as np
