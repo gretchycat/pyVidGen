@@ -1,133 +1,21 @@
 import sys,os,pydub,time, random
 from datetime import datetime as dt
 from optparse import OptionParser
-from sounddevice_audio import sounddevice_audio
 np=None
 try:
-    sd=sounddevice_audio()
+    from sounddevice_audio import sounddevice_audio
+    au=sounddevice_audio()
     import numpy as np
     from scipy import signal as sp
 except:
     print('missing sounddevice, numpy or scipy libraries.')
     from termux_audio import termux_audio
-    sd=termux_audio()
+    au=termux_audio()
 from pydub import AudioSegment
 
 STOP=0
 PLAY=1
 RECORD=2
-
-def ideal_bandpass_filter(data, f_low, f_high, sample_rate):
-    fft_data = np.fft.fft(data)    # Transform data to frequency domain
-    fft_data[0] *= 0.5    # Handle DC component
-    fft_data[f_low//sample_rate:f_high//sample_rate] = 1    # Pass frequencies in the range
-    fft_data[f_high//sample_rate:] = 0    # Attenuate frequencies above the range
-    return np.fft.ifft(fft_data).astype('float32')    # Transform back to time domain
-
-def butterworth_filter(data, f_cutoff, order, sample_rate, btype="low"):
-    nyq = 0.5 * sample_rate
-    Wn = f_cutoff / nyq
-    b, a = sp.butter(order, Wn, btype=btype)
-    filtered_data, _ = sp.filtfilt(b, a, data)
-    return filtered_data.astype('float32')
-
-def get_noise_profile(data, sample_rate, floor_margin=1/3, segment_factor=1):
-    """
-    Extracts a smoothed noise profile from an audio data array.
-
-    Args:
-        data: A NumPy array containing the audio data (float32 or int16).
-        sample_rate: The sampling rate of the audio (Hz).
-        floor_margin: The percentage margin (0-100) added to the global noise floor threshold.
-        segment_factor: A factor dividing the sample_rate to determine the segment size (e.g., 10 for 100ms at 10kHz).
-
-    Returns:
-        noise_profile: A NumPy array containing the smoothed noise profile.
-    """
-
-    # Pass 1: Find global noise floor threshold and peak
-    segment_length = int(sample_rate * segment_factor)
-    segment_peaks = [np.max(np.abs(data[i:i+segment_length])) for i in range(0, len(data), segment_length) if np.max(np.abs(data[i:i+segment_length])) > 0.0]
-    peak=np.max(segment_peaks)
-    if peak==0:
-        return []
-    global_noise_floor = np.min(segment_peaks) * (1+floor_margin)
-    print(segment_peaks/peak)
-    print('floor:',global_noise_floor/peak)
-    print('peak: ',peak)
-
-    # Pass 2: Extract and smooth noise profile segments
-    noise_profile = np.empty(shape=(0,data.shape[1]))
-    for i in range(0, len(data), segment_length):
-        segment = data[i:i+segment_length]
-        print('segment', segment.shape, np.max(np.abs(segment))/peak)
-        if np.max(np.abs(segment)) <= global_noise_floor:
-            # Apply windowing (e.g., Hann) for smoothing
-            window = np.hanning(segment.shape[0])[:,None]
-            smoothed_segment = segment * window
-            print('    segment', segment.shape, smoothed_segment.shape)
-            if len(noise_profile)==0:
-                noise_profile=smoothed_segment
-            else:
-                np.concatenate((noise_profile, smoothed_segment))
-    if len(noise_profile)<sample_rate:
-        return np.empty(shape=(0,data.shape[1]))
-    noise_profile = np.tile(noise_profile, (int(np.ceil(len(data) / len(noise_profile))), 1))[:len(data)]
-    #normalize noise profile (fill in hanning dips)
-    return (noise_profile)
-
-def audacity_like_filter(data, sample_rate, channels=1):
-    """
-    Performs noise filtering on a NumPy audio array similar to Audacity.
-    Args:
-        data: A NumPy array containing the audio data (float32 or int16).
-        sample_rate: The sampling rate of the audio (Hz).
-        channels: The number of audio channels (1 for mono, 2 for stereo).
-
-    Returns:
-        filtered_data: A NumPy array containing the noise-reduced audio data.
-    """
-    if len(data)==0:
-        return data
-    # Step 1: Estimate noise floor
-    noise_sample=[]
-    noise_margin=1/10
-    print(data.shape)
-    while len(noise_sample)<(sample_rate) and noise_margin<0.7: #find noise floor
-        noise_sample = get_noise_profile(data, sample_rate, floor_margin=noise_margin).astype('float32')
-        print(noise_sample.shape)
-        noise_margin+=1/10
-    if len(noise_sample)<=0:
-        print('No suitable noise profile found')
-        return data
-    print(f'noise margin: {noise_margin}')
-    print(noise_sample.shape)
-    print('playing noise profile')
-    sd.play(noise_sample, sample_rate)
-    sd.wait()
-    print('done')
-    # Convert data and noise sample to frequency domain using FFT
-    fft_data = np.fft.fft(data)
-    fft_noise = np.fft.fft(noise_sample)
-    # Step 2: Spectral subtraction
-    # Average the noise spectrum across channels (if stereo)
-    if channels == 2:
-        fft_noise = np.mean(fft_noise, axis=1)
-    # Subtract the noise spectrum from the data spectrum
-    fft_filtered = fft_data - fft_noise
-    # Step 3: Reconstruction and smoothing
-    # Apply a smoothing window function (e.g., Hann) to avoid artifacts
-    #hann_window = np.hanning(fft_filtered.shape[0])
-    #fft_filtered *= hann_window[:, None]
-    #fft_filtered *= np.hanning(len(fft_filtered))
-    filtered_data = np.fft.ifft(fft_filtered).real
-    # Ensure data format remains unchanged
-    if data.dtype == np.int16:
-        filtered_data = np.clip(filtered_data, -1.0, 1.0) * np.iinfo(np.int16).max
-    else:
-        filtered_data = np.clip(filtered_data, -1.0, 1.0)
-    return filtered_data.astype('float32')
-    pass
 
 class pymms:
     def __init__(self):
@@ -148,7 +36,7 @@ class pymms:
         self.stop()
 
     def load(self, filename):
-        sd.stop()
+        au.stop()
         self.timer_clear()
         self.cursor=0
         self.selected=0
@@ -161,7 +49,7 @@ class pymms:
         self.channels=audio.channels
         self.sample_width=0 #audio.sample_width
         self.buffer=audio_array
-        sd.setAudioProperties(self.buffer, self.fps, self.channels)
+        au.setAudioProperties(self.buffer, self.fps, self.channels)
         if self.status==PLAY:
             self.stop()
             self.play()
@@ -186,7 +74,7 @@ class pymms:
         return t
 
     def save(self, filename):
-        return sd.save(filename, self.buffer, self.length())
+        return au.save(filename, self.buffer, self.length())
 
     def playpause(self):
         if self.status in [ PLAY, RECORD ]:
@@ -196,7 +84,7 @@ class pymms:
 
     def record(self):
         if self.status==STOP:
-            sd.setAudioProperties(self.buffer, self.fps, self.channels)
+            au.setAudioProperties(self.buffer, self.fps, self.channels)
             self.status=RECORD
             self.timer_start(factor=self.fps)
             c=self.cursor
@@ -208,7 +96,7 @@ class pymms:
             else:
                 self.pre=self.buffer[:c]
                 self.post=self.buffer[c:]
-            self.record_buffer=sd.rec(self.fps*60*10, self.fps, channels=self.channels)
+            self.record_buffer=au.rec(self.fps*60*10, self.fps, channels=self.channels)
 
     def play(self):
         if self.status==STOP:
@@ -218,45 +106,36 @@ class pymms:
             s=int(self.selected)
             sl=int(self.selected_length)
             if sl==0:
-                sd.play(self.buffer[c:], self.fps)
+                au.play(self.buffer[c:], self.fps)
             else:
-                sd.play(self.buffer[c:s+sl], self.fps)
+                au.play(self.buffer[c:s+sl], self.fps)
 
     def pause(self):
         if self.status==PLAY:
             self.status=STOP
-            sd.stop()
+            au.stop()
             self.timer_clear()
         elif self.status==RECORD:
             self.status=STOP
-            sd.stop()
+            au.stop()
             if len(self.record_buffer)==0:
-                self.record_buffer=sd.record_buffer.get_array_of_samples()
-                self.fps=sd.record_buffer.frame_rate
-                self.channels=sd.record_buffer.channels
+                self.record_buffer=au.record_buffer.get_array_of_samples()
+                self.fps=au.record_buffer.frame_rate
+                self.channels=au.record_buffer.channels
                 self.factor=self.fps
             print(f"buffer:{len(self.record_buffer)}")
             length=int(self.timer_get())
             print(f"Length:{length}")
             record_buffer=self.record_buffer[:length] #truncate buffer
-            if np and False:
-                window = np.hanning(record_buffer.shape[0])[:,None]
-                record_buffer=record_buffer * window
             self.cursor=len(self.pre)+(len(record_buffer))
             self.selected=0
             self.selected_length=0
             if len(self.pre)==0:
                 self.buffer=record_buffer
             else:
-                if np:
-                    self.buffer=np.concatenate((self.pre, record_buffer))
-                else:
-                    self.buffer=self.pre+record_buffer 
+                self.buffer=au.concatenate(self.pre, record_buffer)
             if len(self.post)>0:
-                if np:
-                    self.buffer=np.concatenate((self.buffer, self.post))
-                else:
-                    self.buffer=self.buffer+self.post
+                self.buffer=au.concatenate(self.buffer, self.post)
             self.pre, self.post = [], []
             self.record_buffer=[]
             self.timer_clear()
@@ -341,10 +220,7 @@ class pymms:
         post=self.buffer[s+sl:]
         if len(pre)>0:
             if len(post)>0:
-                if np:
-                    self.buffer=np.concatenate((pre, post))
-                else:
-                    self.buffer=pre+post
+                self.buffer=au.concatenate(pre, post)
             else:
                 self.buffer=pre
         else:
@@ -370,9 +246,7 @@ class pymms:
         return self.get_cursor()/self.fps
 
     def denoise(self):
-        #self.buffer = audacity_like_filter(self.buffer, self.fps)
-        self.buffer = ideal_bandpass_filter(self.buffer, 100, 5000, self.fps).real
-        #self.buffer = butterworth_filter(self.buffer, 500, 2, self.fps)
+        self.buffer=au.noiseFilter()
 
     def normalize(self):
         pass

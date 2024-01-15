@@ -69,3 +69,9 @@ class termux_audio():
         self.buffer=buffer
         self.fps=fps
         self.channels=channels
+
+    def concatenate(self, buf1, buf2):
+        return buf1+buf2
+
+    def noiseFilter(self):
+        return self.bufffer
