@@ -17,64 +17,59 @@ STOP=0
 PLAY=1
 RECORD=2
 
+class Timer:
+    def __init__(self):
+        self.factor=1
+        self.startTime=0.0
+
+    def now(self):
+        return dt.now().timestamp()
+
+    def start(self, factor=1, offset=0):
+        self.factor=factor
+        self.startTime=self.now()+offset
+
+    def get(self):
+        if self.startTime>0:
+            return (self.now()-self.startTime)*self.factor
+        else:
+            return 0
+
+    def clear(self):
+        t=self.get()
+        self.startTime=0
+        return t
+
 class pymms:
     def __init__(self):
-        self.x=1
-        self.y=1
-        self.yy=1
+        self.timer=Timer()
         self.status=STOP
-        self.fps=24000
-        self.factor=self.fps
-        self.channels=1
+        self.record_fps=24000
+        self.record_channels=1
+        self.record_sample_width=16//8
         self.cursor=0
-        self.startTime=0
         self.selected=0
         self.selected_length=0
-        self.buffer=[]
         self.record_buffer=[]
         self.stream=None
         self.stop()
 
     def load(self, filename):
         au.stop()
-        self.timer_clear()
+        self.timer.clear()
         self.cursor=0
         self.selected=0
         self.selected_length=0
-        self.record_buffer=[]
-        audio=AudioSegment.from_file(filename)
-        audio_array=audio.get_array_of_samples()
-        self.fps=audio.frame_rate
-        self.factor=self.fps
-        self.channels=audio.channels
-        self.sample_width=0 #audio.sample_width
-        self.buffer=audio_array
-        au.setAudioProperties(self.buffer, self.fps, self.channels)
+        audio=au.load(filename)
         if self.status==PLAY:
             self.stop()
             self.play()
-        return {'title':filename, 'length':audio.duration_seconds, 'bitrate':self.fps, 'quality':self.sample_width, 'channels':self.channels}
-
-    def timer_now(self):
-        return dt.now().timestamp()
-
-    def timer_start(self, factor=1, offset=0):
-        self.factor=factor
-        self.startTime=self.timer_now()+offset
-
-    def timer_get(self):
-        if self.startTime>0:
-            return (self.timer_now()-self.startTime)*self.factor
-        else:
-            return 0
-
-    def timer_clear(self):
-        t=self.timer_get()
-        self.startTime=0
-        return t
+        return {'title':filename, 'length':audio.duration_seconds, 
+                'bitrate':audio.frame_rate, 'quality':audio.sample_width, 
+                'channels':audio.channels}
 
     def save(self, filename):
-        return au.save(filename, self.buffer, self.length())
+        return au.save(filename)
 
     def playpause(self):
         if self.status in [ PLAY, RECORD ]:
@@ -84,9 +79,8 @@ class pymms:
 
     def record(self):
         if self.status==STOP:
-            au.setAudioProperties(self.buffer, self.fps, self.channels)
+            au.setAudioProperties(self.buffer, self.record_fps, self.record_channels)
             self.status=RECORD
-            self.timer_start(factor=self.fps)
             c=self.cursor
             s=int(self.selected)
             sl=int(self.selected_length)
@@ -96,70 +90,75 @@ class pymms:
             else:
                 self.pre=self.buffer[:c]
                 self.post=self.buffer[c:]
-            self.record_buffer=au.rec(self.fps*60*10, self.fps, channels=self.channels)
+            self.timer,start(factor=self.record_fps)
+            self.record_buffer=au.rec(self.record_fps*60*10, self.record_fps, channels=self.record_channels)
 
     def play(self):
-        if self.status==STOP:
+        if self.status==STOP and au.audio:
             self.status=PLAY
-            self.timer_start(factor=self.fps, offset=-int(self.get_cursor()/self.fps))
+            self.timer.start(factor=au.audio.frame_rate, offset=-int(self.get_cursor()/au.audio.frame_rate))
             c=self.get_cursor()
             s=int(self.selected)
             sl=int(self.selected_length)
             if sl==0:
-                au.play(self.buffer[c:], self.fps)
+                au.play(au.audio.get_array_of_samples()[c:], au.audio.frame_rate)
             else:
-                au.play(self.buffer[c:s+sl], self.fps)
+                au.play(au.audio.get_array_of_samples()[c:s+sl], au.audio.frame_rate)
 
     def pause(self):
         if self.status==PLAY:
             self.status=STOP
             au.stop()
-            self.timer_clear()
+            self.timer.clear()
         elif self.status==RECORD:
             self.status=STOP
             au.stop()
-            if len(self.record_buffer)==0:
-                self.record_buffer=au.record_buffer.get_array_of_samples()
-                self.fps=au.record_buffer.frame_rate
-                self.channels=au.record_buffer.channels
-                self.factor=self.fps
-            print(f"buffer:{len(self.record_buffer)}")
-            length=int(self.timer_get())
+            if au.record_audio:
+                self.record_buffer=au.record_audio.get_array_of_samples()
+                self.record_fps=au.record_audio.frame_rate
+                self.record_channels=au.record_audio.channels
+            length=int(self.timer.get())
             print(f"Length:{length}")
             record_buffer=self.record_buffer[:length] #truncate buffer
             self.cursor=len(self.pre)+(len(record_buffer))
             self.selected=0
             self.selected_length=0
             if len(self.pre)==0:
-                self.buffer=record_buffer
+                au.setAudio(record_buffer, self.record_fps, self.record_sample_width, self.record_channels)
             else:
-                self.buffer=au.concatenate(self.pre, record_buffer)
+                ca=au.concatenate((self.pre, record_buffer))
+                au.setAudio(ca, self.record_fps, self.record_sample_width, self.record_channels)
             if len(self.post)>0:
-                self.buffer=au.concatenate(self.buffer, self.post)
+                ca=au.concatenate((au.audio.get_array_of_samples(), self.post))
+                au.setAudio(ca, self.record_fps, self.record_sample_width, self.record_channels)
             self.pre, self.post = [], []
             self.record_buffer=[]
-            self.timer_clear()
+            self.timer.clear()
 
     def length_time(self):
-        return self.length()/self.fps
+        if au.audio:
+            return self.length()/au.audio.frame_rate
+        return 0
 
     def length(self):
         if self.status==RECORD:
-            if self.timer_get():
-                return int(self.timer_get()+len(self.buffer)/self.channels)
-            return 0
+            if self.timer.get():
+                return int(self.timer.get()+len(au.audio.get_array_of_samples())/self.record_channels)
         else:
-            return int(len(self.buffer)/self.channels)
+            if au.audio:
+                return int(len(au.audio.get_array_of_samples())/au.audio.channels)
+        return 0
 
     def stop(self):
         self.pause()
         self.selected=0
         self.selected_length=0
         self.cursor=0
-        self.timer_clear()
+        self.timer.clear()
 
     def seek_time(self, time):
-        self.seek(time*self.fps)
+        if au.audio:
+            self.seek(time*au.audio.frame_rate)
 
     def seek(self, frame):
         playing=self.status==PLAY
@@ -177,19 +176,21 @@ class pymms:
             self.play()
 
     def seekFwd_time(self, time):
-        self.seekFwd(time*self.fps)
+        if au.audio:
+            self.seekFwd(time*au.audio.frame_rate)
 
     def seekFwd(self, frames):
         self.seek(self.cursor+frames)
 
     def seekBack_time(self, time):
-        self.seekBack(time*self.fps)
+        if au.audio:
+            self.seekBack(time*au.audio.frame_rate)
 
     def seekBack(self, frames):
         self.seek(self.cursor-frames)
 
     def select_time(self, s, sl):
-        self.select(s*self.fps, sl*self.fps)
+        self.select(s*au.audio.frame_rate, sl*au.audio.frame_rate)
 
     def select(self, s, sl):
         if self.status==STOP:
@@ -220,7 +221,7 @@ class pymms:
         post=self.buffer[s+sl:]
         if len(pre)>0:
             if len(post)>0:
-                self.buffer=au.concatenate(pre, post)
+                self.buffer=au.concatenate((pre, post))
             else:
                 self.buffer=pre
         else:
@@ -233,20 +234,25 @@ class pymms:
         if self.cursor>=self.length() and self.status==PLAY:
             if self.endHandler:
                 self.endHandler()
-        t=self.timer_get()
+        t=self.timer.get()
         if t>0:
             self.cursor=int(t)
             if self.cursor>self.length():
                 self.cursor=self.length()
         if self.status==RECORD:
-            return self.cursor+len(self.pre)/self.channels
+            return self.cursor+len(self.pre)/self.record_channels
         return self.cursor
 
     def get_cursor_time(self):
-        return self.get_cursor()/self.fps
+        fps=self.record_fps
+        if au.audio:
+            au.audio.frame_rate
+        if fps:
+            return self.get_cursor()/fps #au.audio.frame_rate
+        return 0
 
     def denoise(self):
-        self.buffer=au.noiseFilter()
+        au.noiseFilter()
 
     def normalize(self):
         pass

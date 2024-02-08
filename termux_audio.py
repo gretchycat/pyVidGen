@@ -30,6 +30,11 @@ class termux_audio():
         self.fps=24000
         self.channels=1
 
+    def load(self, filename):
+        self.audio=AudioSegment.from_file(filename)
+        self.setAudioProperties(self.audio.get_array_of_samples(), self.audio.frame_rate, self.audio.channels)
+        return self.audio
+
     def play_file(self, fn):
         termux.Media.play(fn)
 

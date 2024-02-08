@@ -10,23 +10,42 @@ class sounddevice_audio():
     def __init__(self):
         self.fps=44100
         self.channels=1
+        self.sample_width=16//8
         self.buffer=[]
+        self.record_buffer=[]
+        self.audio=None
+        self.record_audio=None
         return None
+
+    def load(self, filename):
+        self.audio=AudioSegment.from_file(filename)
+        self.setAudioProperties(self.audio.get_array_of_samples(), self.audio.frame_rate, self.audio.channels)
+        return self.audio
 
     def play(self, buffer, fps, channels=1):
         return sd.play(buffer, fps)
 
     def stop(self):
+        if len(self.record_buffer):
+            self.record_audio=self.setAudio(self.record_buffer, self.fps, 
+                self.sample_width, self.channels)
+            record_buffer=[]
         return sd.stop()
 
     def rec(self, len, fps, channels=1):
-        return sd.rec(len, fps, channels=channels)
+        self.record_audio=None
+        self.record_buffer= sd.rec(len, fps, channels=channels)
+        return self.record_buffer
 
     def wait(self):
         return sd.wait()
 
-    def save(self, filename, buffer, length):
+    def save(self, filename):
         # Validate audio data
+        if self.audio:
+            self.audio.export(filename)
+
+    def setAudio(self, buffer, fps, sample_width, channels):
         if not isinstance(buffer, np.ndarray):
             return
             raise ValueError("audio_data must be a NumPy array")
@@ -39,18 +58,35 @@ class sounddevice_audio():
             buf = np.clip(buffer, -1.0, 1.0) * np.iinfo(np.int16).max
         buf = buf.astype(np.int16)
         # Create a pydub AudioSegment from the NumPy array
-        if length>0:
-            audio_segment = AudioSegment(buf.tobytes(),
-                frame_rate=self.fps, sample_width=16//8, channels=self.channels)
-            audio_segment.export(filename)
+        return AudioSegment(buf.tobytes(),
+            frame_rate=fps, sample_width=sample_width, channels=channels)
 
     def setAudioProperties(self, buffer, fps, channels):
         self.buffer=buffer
         self.fps=fps
         self.channels=channels
 
-    def concatenate(self, buf1, buf2):
-        return np.concatenate((buf1, buf2))
+    def concatenate(self, buffers):
+        return np.concatenate(buffers)
+
+    def crop(self, start, end):
+        sf,ef=None, None
+        if start != None:
+            sf=start*self.audio.frame_rate*self.audio.channels
+        if end is not None:
+            ef=end*self.audio.frame_rate*self.audio.channels
+        if sf is not None and ef is not None:
+            clip_frames=self.audio.get_array_of_samples()[sf:ef]
+        elif sf is not None:
+            clip_frames=self.audio.get_array_of_samples()[sf:]
+        elif ef is not None:
+            clip_frames=self.audio.get_array_of_samples()[:ef]
+        else:
+            clip_frames=self.audio.get_array_of_samples()
+        #convert to AudioSegment
+        audio_segment = AudioSegment(buf.tobytes(), frame_rate=self.audio.frame_rate, 
+            sample_width=self.audio.sample_width, channels=self.audio.channels)
+        return audio_segment
 
     def noiseFilter(self):
         #self.buffer = audacity_like_filter(self.buffer, self.fps)
