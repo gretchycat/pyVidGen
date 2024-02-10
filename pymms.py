@@ -79,7 +79,7 @@ class pymms:
 
     def record(self):
         if self.status==STOP:
-            au.setAudioProperties(self.buffer, self.record_fps, self.record_channels)
+            au.setAudioProperties(self.record_fps, self.record_channels)
             self.status=RECORD
             c=self.cursor
             s=int(self.selected)
@@ -90,8 +90,8 @@ class pymms:
             else:
                 self.pre=self.buffer[:c]
                 self.post=self.buffer[c:]
-            self.timer,start(factor=self.record_fps)
-            self.record_buffer=au.rec(self.record_fps*60*10, self.record_fps, channels=self.record_channels)
+            self.timer.start(factor=self.record_fps)
+            self.record_buffer=au.rec()
 
     def play(self):
         if self.status==STOP and au.audio:
@@ -101,9 +101,9 @@ class pymms:
             s=int(self.selected)
             sl=int(self.selected_length)
             if sl==0:
-                au.play(au.audio.get_array_of_samples()[c:], au.audio.frame_rate)
+                au.play(start=c)
             else:
-                au.play(au.audio.get_array_of_samples()[c:s+sl], au.audio.frame_rate)
+                au.play(start=c, end=s+sl)
 
     def pause(self):
         if self.status==PLAY:

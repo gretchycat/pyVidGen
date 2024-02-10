@@ -19,11 +19,16 @@ class sounddevice_audio():
 
     def load(self, filename):
         self.audio=AudioSegment.from_file(filename)
-        self.setAudioProperties(self.audio.get_array_of_samples(), self.audio.frame_rate, self.audio.channels)
+        self.setAudioProperties(self.audio.frame_rate, self.audio.channels)
         return self.audio
 
-    def play(self, buffer, fps, channels=1):
-        return sd.play(buffer, fps)
+    def play(self, start=0, end=0):
+        buffer=self.audio.get_array_of_samples()
+        fps=self.audio.frame_rate
+        channels=self.audio.channels
+        if end==0:
+            return sd.play(buffer[start:], fps)
+        return sd.play(buffer[start:end], fps)
 
     def stop(self):
         if len(self.record_buffer):
@@ -32,9 +37,12 @@ class sounddevice_audio():
             record_buffer=[]
         return sd.stop()
 
-    def rec(self, len, fps, channels=1):
+    def rec(self):
+        fps=self.fps
+        channels=self.channels
+        len=fps*channels*60*10
         self.record_audio=None
-        self.record_buffer= sd.rec(len, fps, channels=channels)
+        self.record_buffer=sd.rec(len, fps, channels=channels)
         return self.record_buffer
 
     def wait(self):
@@ -61,8 +69,7 @@ class sounddevice_audio():
         return AudioSegment(buf.tobytes(),
             frame_rate=fps, sample_width=sample_width, channels=channels)
 
-    def setAudioProperties(self, buffer, fps, channels):
-        self.buffer=buffer
+    def setAudioProperties(self, fps, channels):
         self.fps=fps
         self.channels=channels
 
