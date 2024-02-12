@@ -74,7 +74,7 @@ class termplayer(widget):
             pass
         self.filename=files[0]
         self.player=pymms()
-        self.player.endHandler=self.endHandler
+        self.player.au.endHandler=self.endHandler
         if self.mode=='play':
             self.load(self.filename)
         self.script=script
@@ -221,7 +221,7 @@ class termplayer(widget):
         timestr=self.drawBigString(minsec(t))
         buffer=''
         fg=27
-        if self.player.status==RECORD:
+        if self.player.au.status==RECORD:
             fg=196
         else:
             fg=27
@@ -265,16 +265,16 @@ class termplayer(widget):
         self.timeBox.feed(self.t.clear())
         self.timeBox.feed(self.drawMultiLine(30-(5*5)-2, 1, timestr))
         self.timeBox.feed(self.t.gotoxy(1, 3))
-        if self.player.status==PLAY:
+        if self.player.au.status==PLAY:
             i=self.icons['play']
             self.timeBox.feed(self.t.ansicolor(46, 233, bold=True))
             self.timeBox.feed(i['label'])
                
-        elif self.player.status==RECORD:
+        elif self.player.au.status==RECORD:
             i=self.icons['record']
             self.timeBox.feed(self.t.ansicolor(196, 233, bold=True))
             self.timeBox.feed(i['label'])
-        elif self.player.status==STOP:
+        elif self.player.au.status==STOP:
             i=self.icons['stop']
             self.timeBox.feed(self.t.ansicolor(27, 233, bold=True))
             self.timeBox.feed(i['label'])
@@ -368,7 +368,7 @@ class termplayer(widget):
         self.load(self.playlist[i])
 
     def endHandler(self):
-        if self.player.status==PLAY:
+        if self.player.au.status==PLAY:
             if self.mode=='play':
                 if self.repeat:
                     self.stop()

@@ -1,3 +1,5 @@
+from Timer import Timer
+
 try:
     import sounddevice as sd
     import numpy as np
@@ -6,38 +8,58 @@ except:
 
 from pydub import AudioSegment
 
+STOP=0
+PLAY=1
+RECORD=2
+
 class sounddevice_audio():
     def __init__(self):
+        self.endHandler=None
+        self.status=STOP
+        self.timer=Timer()
+        self.cursor=0
         self.fps=44100
         self.channels=1
         self.sample_width=16//8
         self.buffer=[]
         self.record_buffer=[]
         self.audio=None
+        self.audio_start=0
         self.record_audio=None
         return None
 
     def load(self, filename):
+        self.timer.clear()
         self.audio=AudioSegment.from_file(filename)
         self.setAudioProperties(self.audio.frame_rate, self.audio.channels)
+        self.audio_start=0
         return self.audio
 
     def play(self, start=0, end=0):
+        self.status=PLAY
         buffer=self.audio.get_array_of_samples()
         fps=self.audio.frame_rate
         channels=self.audio.channels
+        self.audio_start=self.get_cursor()
+        self.timer.start(factor=self.audio.frame_rate, offset=-int(self.get_cursor()/self.audio.frame_rate))
         if end==0:
             return sd.play(buffer[start:], fps)
         return sd.play(buffer[start:end], fps)
 
     def stop(self):
+        self.status=STOP
         if len(self.record_buffer):
             self.record_audio=self.setAudio(self.record_buffer, self.fps, 
                 self.sample_width, self.channels)
             record_buffer=[]
+        self.timer.clear()
+        self.audio_start=0
         return sd.stop()
 
     def rec(self):
+        self.status=RECORD
+        self.audio_start=self.get_cursor()
+        self.timer.start(factor=self.record_fps)
         fps=self.fps
         channels=self.channels
         len=fps*channels*60*10
@@ -52,6 +74,42 @@ class sounddevice_audio():
         # Validate audio data
         if self.audio:
             self.audio.export(filename)
+
+    def length_time(self):
+        if self.audio:
+            return self.length()/self.audio.frame_rate
+        return 0
+
+    def length(self):
+        if self.audio:
+            if self.status==RECORD:
+                if self.timer.get():
+                    return int(self.timer.get()+len(self.audio.get_array_of_samples())/self.record_channels)
+            else:
+                if self.audio:
+                    return int(len(self.audio.get_array_of_samples())/self.audio.channels)
+        return 0
+
+    def get_cursor(self): #TODO FIXME find authoritative value
+        if self.cursor>=self.length() and self.status==PLAY:
+            if self.endHandler:
+                self.endHandler()
+        t=self.timer.get()
+        if t>0:
+            self.cursor=int(t)
+            if self.cursor>self.length():
+                self.cursor=self.length()
+        if self.status==RECORD:
+            return self.cursor+self.audio_start
+        return self.cursor
+
+    def get_cursor_time(self):
+        fps=self.fps
+        if self.audio:
+            fps=self.audio.frame_rate
+        if fps:
+            return self.get_cursor()/fps #au.audio.frame_rate
+        return 0
 
     def setAudio(self, buffer, fps, sample_width, channels):
         if not isinstance(buffer, np.ndarray):
@@ -73,15 +131,30 @@ class sounddevice_audio():
         self.fps=fps
         self.channels=channels
 
-    def concatenate(self, buffers):
+    def concatenate(self, audiolist):
+        full=None
+        for a in audiolist:
+            if full==None:
+                full=a
+            else:full=full+a
+        return full
         return np.concatenate(buffers)
 
-    def crop(self, start, end):
+    def crop(self, start=None, end=None):
+        fps=self.fps
+        channels=self.channels
+        sample_width=16//8
+        if self.audio:
+            fps=self.audio.frame_rate
+            channels=self.audio.channels
+            sample_width=self.audio.sample_width
+        else:
+            return None
         sf,ef=None, None
-        if start != None:
-            sf=start*self.audio.frame_rate*self.audio.channels
+        if start is not None:
+            sf=start*fps*channels
         if end is not None:
-            ef=end*self.audio.frame_rate*self.audio.channels
+            ef=end*fps*channels
         if sf is not None and ef is not None:
             clip_frames=self.audio.get_array_of_samples()[sf:ef]
         elif sf is not None:
@@ -91,8 +164,8 @@ class sounddevice_audio():
         else:
             clip_frames=self.audio.get_array_of_samples()
         #convert to AudioSegment
-        audio_segment = AudioSegment(buf.tobytes(), frame_rate=self.audio.frame_rate, 
-            sample_width=self.audio.sample_width, channels=self.audio.channels)
+        audio_segment = AudioSegment(clip_frames.tobytes(), frame_rate=fps, 
+            sample_width=sample_width, channels=channels)
         return audio_segment
 
     def noiseFilter(self):
