@@ -43,8 +43,8 @@ class sounddevice_audio():
         self.audio_start=self.get_cursor()
         self.timer.start(factor=self.audio.frame_rate, offset=-int(self.get_cursor()/self.audio.frame_rate))
         if end==0:
-            return sd.play(buffer[start:], fps)
-        return sd.play(buffer[start:end], fps)
+            return sd.play(buffer[int(start):], fps)
+        return sd.play(buffer[int(start):int(end)], fps)
 
     def stop(self):
         self.status=STOP
