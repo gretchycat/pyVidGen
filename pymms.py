@@ -21,23 +21,16 @@ class pymms:
         self.record_fps=24000
         self.record_channels=1
         self.record_sample_width=16//8
-        self.cursor=0
         self.selected=0
         self.selected_length=0
-        self.record_buffer=[]
+        #self.record_buffer=[]
         self.stream=None
         self.stop()
         self.au=au
 
     def load(self, filename):
-        au.stop()
-        self.cursor=0
-        self.selected=0
-        self.selected_length=0
+        self.stop()
         audio=au.load(filename)
-        if au.status==PLAY:
-            self.stop()
-            self.play()
         return {'title':filename, 'length':audio.duration_seconds, 
                 'bitrate':audio.frame_rate, 'quality':audio.sample_width, 
                 'channels':audio.channels}
@@ -54,7 +47,7 @@ class pymms:
     def record(self):
         if au.status==STOP:
             au.setAudioProperties(self.record_fps, self.record_channels)
-            c=self.cursor
+            c=au.cursor
             s=int(self.selected)
             sl=int(self.selected_length)
             if sl>0:
@@ -63,7 +56,7 @@ class pymms:
             else:
                 self.pre=au.crop(None, c)
                 self.post=au.crop(c, None) 
-            self.record_buffer=au.rec()
+            au.rec()
 
     def play(self):
         if au.status==STOP and au.audio:
@@ -82,35 +75,34 @@ class pymms:
             length=int(au.timer.get())
             au.stop()
             if au.record_audio:
-                self.record_buffer=au.record_audio.get_array_of_samples()
+                au.record_audio.get_array_of_samples()
                 self.record_fps=au.record_audio.frame_rate
                 self.record_channels=au.record_audio.channels
-            print(f"Length:{length}")
-            record_buffer=self.record_buffer[:length] #truncate buffer
-            if self.pre:
-                self.cursor=len(self.pre.get_list_of_samples())+(len(record_buffer))
             else:
-                self.cursor=(len(record_buffer))
+                print(f'\n\nMissing record audio')
+                return
+            print(f"Length:{length}")
+            if self.pre:
+                au.cursor=len(self.pre.get_array_of_samples())+(au.record_audio.frame_count())
+            else:
+                au.cursor=au.record_audio.frame_count()
             self.selected=0
             ca=None
             self.selected_length=0
             if self.pre:
-                au.setAudio(record_buffer, self.record_fps, self.record_sample_width, self.record_channels)
-            else:
                 ca=au.concatenate((self.pre, au.record_audio))
-                au.setAudio(ca, self.record_fps, self.record_sample_width, self.record_channels)
+            else:
+                ca=au.record_audio
             if self.post:
-                ca=au.concatenate((au.audio, self.post))
-                au.setAudio(ca, self.record_fps, self.record_sample_width, self.record_channels)
+                ca=au.concatenate((ca, self.post))
             au.audio=ca
             self.pre, self.post = None, None
-            self.record_buffer=[]
 
     def stop(self):
         self.pause()
         self.selected=0
         self.selected_length=0
-        self.cursor=0
+        au.cursor=0
 
     def seek_time(self, time):
         if au.audio:
@@ -126,9 +118,9 @@ class pymms:
                 frame=0
             if frame>l:
                 time=l
-            self.cursor=frame
-        if self.cursor>l:
-            self.cursor=l
+            au.cursor=frame
+        if au.cursor>l:
+            au.cursor=l
         if playing:
             self.play()
 
@@ -137,14 +129,14 @@ class pymms:
             self.seekFwd(time*au.audio.frame_rate)
 
     def seekFwd(self, frames):
-        self.seek(self.cursor+frames)
+        self.seek(au.cursor+frames)
 
     def seekBack_time(self, time):
         if au.audio:
             self.seekBack(time*au.audio.frame_rate)
 
     def seekBack(self, frames):
-        self.seek(self.cursor-frames)
+        self.seek(au.cursor-frames)
 
     def select_time(self, s, sl):
         self.select(s*au.audio.frame_rate, sl*au.audio.frame_rate)

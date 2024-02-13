@@ -359,6 +359,8 @@ class termplayer(widget):
         if i>=len(self.playlist):
             i=0
         self.load(self.playlist[i])
+        if self.mode=='play':
+            self.play()
 
     def prev(self):
         i=self.playlist.index(self.filename)
@@ -366,6 +368,8 @@ class termplayer(widget):
         if i<0:
             i=len(self.playlist)-1
         self.load(self.playlist[i])
+        if self.mode=='play':
+            self.play()
 
     def endHandler(self):
         if self.player.au.status==PLAY:
