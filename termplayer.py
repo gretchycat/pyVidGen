@@ -269,7 +269,6 @@ class termplayer(widget):
             i=self.icons['play']
             self.timeBox.feed(self.t.ansicolor(46, 233, bold=True))
             self.timeBox.feed(i['label'])
-               
         elif self.player.au.status==RECORD:
             i=self.icons['record']
             self.timeBox.feed(self.t.ansicolor(196, 233, bold=True))
@@ -292,7 +291,6 @@ class termplayer(widget):
         self.timeBox.feed(self.t.gotoxy(1, 5))
         self.timeBox.feed(self.t.ansicolor(scolor, 233, bold=True))
         self.timeBox.feed(i['label'])
-
         buffer+=self.playerbox.draw()
         if self.showPlayList:
             self.playlistbox.feed(f'{self.t.clear()}')

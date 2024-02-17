@@ -23,8 +23,6 @@ class pymms:
         self.record_sample_width=16//8
         self.selected=0
         self.selected_length=0
-        #self.record_buffer=[]
-        self.stream=None
         self.stop()
         self.au=au
 
@@ -46,8 +44,11 @@ class pymms:
 
     def record(self):
         if au.status==STOP:
-            au.setAudioProperties(self.record_fps, self.record_channels)
+            au.setAudioProperties(fps=self.record_fps,
+                channels=self.record_channels,
+                sample_width=self.record_sample_width)
             c=au.cursor
+            print(f'\nCursor={c/self.record_fps}')
             s=int(self.selected)
             sl=int(self.selected_length)
             if sl>0:
@@ -56,6 +57,10 @@ class pymms:
             else:
                 self.pre=au.crop(None, c)
                 self.post=au.crop(c, None) 
+            if self.pre:
+                print('\npre exists.')
+            if self.post:
+                print('post exists')
             au.rec()
 
     def play(self):
@@ -75,26 +80,33 @@ class pymms:
             length=int(au.timer.get())
             au.stop()
             if au.record_audio:
-                au.record_audio.get_array_of_samples()
+                #au.record_audio.get_array_of_samples()
                 self.record_fps=au.record_audio.frame_rate
+                self.record_sample_width=au.record_audio.sample_width
                 self.record_channels=au.record_audio.channels
             else:
                 print(f'\n\nMissing record audio')
                 return
             print(f"Length:{length}")
             if self.pre:
-                au.cursor=len(self.pre.get_array_of_samples())+(au.record_audio.frame_count())
+                au.cursor=self.pre.frame_count()+au.record_audio.frame_count()
             else:
                 au.cursor=au.record_audio.frame_count()
             self.selected=0
-            ca=None
             self.selected_length=0
-            if self.pre:
+            ca=None
+            if self.pre and self.post:
+                print('\n\n\npre+rec+post')
+                ca=au.concatenate((self.pre, au.record_audio, self.post))
+            elif self.pre:
                 ca=au.concatenate((self.pre, au.record_audio))
+                print('\n\n\npre+rec     ')
+            elif self.post:
+                ca=au.concatenate((au.record_audio, self.post))
+                print('\n\n\nrec+post    ')
             else:
                 ca=au.record_audio
-            if self.post:
-                ca=au.concatenate((ca, self.post))
+                print('\n\n\nrec         ')
             au.audio=ca
             self.pre, self.post = None, None
 
