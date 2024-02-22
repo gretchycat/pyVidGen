@@ -217,7 +217,7 @@ class termplayer(widget):
     def draw(self):
         t=self.player.get_cursor_time()
         self.slider.setValue(t)
-        self.slider.setMax(self.player.length_time())
+        self.slider.setMax(max(self.player.length_time(), t))
         timestr=self.drawBigString(minsec(t))
         buffer=''
         fg=27
