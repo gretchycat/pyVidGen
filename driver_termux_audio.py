@@ -22,18 +22,13 @@ if not err:
 else:
     lastaction='ERROR'
  
-class termux_audio():
-    def __init__(self):
-        self.lastaction=''
-        self.buffer=[]
-        self.record_buffer=[]
-        self.fps=24000
-        self.channels=1
+from pydub import AudioSegment
 
-    def load(self, filename):
-        self.audio=AudioSegment.from_file(filename)
-        self.setAudioProperties(self.audio.get_array_of_samples(), self.audio.frame_rate, self.audio.channels)
-        return self.audio
+from driver_audio import driver_audio
+
+class driver_termux_audio(driver_audio):
+    def __init__(self):
+        super().__init__()
 
     def play_file(self, fn):
         termux.Media.play(fn)
@@ -42,19 +37,21 @@ class termux_audio():
         self.fps=fps
         termux.Microphone.record(fn, rate=fps)
 
-    def play(self, buffer, fps, channels=1):
+    def play(self, start=0, end=0):
+        super().play(start=start, end=end)
+        buffer=self.audio.get_array_of_samples()
         if self.lastaction=='':
-            audio_segment = pydub.AudioSegment(buffer,
-                frame_rate=fps, sample_width=16//8, channels=channels)
+            if end==0:
+                buf=buffer[int(start):]
+            else:
+                buf=buffer[int(start):int(end)]
+            audio_segment = pydub.AudioSegment(buf,
+                frame_rate=self.audio.frame_rate, 
+                sample_width=self.audio.sample_width, 
+                channels=self.audio.channelschannels)
             audio_segment.export(play_temp_file)
-            self.play_file(play_temp_file)
             self.lastaction='play'
-
-    def rec(self, size, fps, channels=1):
-        if self.lastaction=='':
-            self.rec_file(record_temp_file, fps=fps)
-            self.lastaction='record'
-        return self.record_buffer
+            self.play_file(play_temp_file)
 
     def stop(self):
         if self.lastaction=='play':
@@ -66,17 +63,23 @@ class termux_audio():
             self.record_buffer=AudioSegment.from_file(record_temp_file)
             #os.remove(record_temp_file)
             self.lastaction=''
+        super().stop()
 
-    def save(self, filename, buffer, length):
-        pass
+    def rec(self):
+        super().rec()
+        if self.lastaction=='':
+            self.rec_file(record_temp_file, fps=fps)
+            self.lastaction='record'
+        return self.record_buffer
 
-    def setAudioProperties(self, buffer, fps, channels):
-        self.buffer=buffer
-        self.fps=fps
-        self.channels=channels
+    def wait(self):
+        super().wait()
+        return sd.wait()
 
-    def concatenate(self, buf1, buf2):
-        return buf1+buf2
+    def setAudio(self, buffer, fps, sample_width, channels):
+        buf=buffer
+        # Create a pydub AudioSegment 
+        return AudioSegment(buf.tobytes(),
+            frame_rate=fps, sample_width=sample_width, channels=channels)
 
-    def noiseFilter(self):
-        return self.bufffer
+
