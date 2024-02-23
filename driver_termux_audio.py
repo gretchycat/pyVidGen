@@ -1,4 +1,4 @@
-import sys,os,shutil,pydub,termux
+import sys,os,shutil,pydub
 from pydub import AudioSegment
 
 termux_play=shutil.which('termux-media-player')
@@ -8,6 +8,7 @@ record_temp_file='._rec.wav'
 play_temp_file='._play.wav'
 err=False
 if not termux_api:
+    import termux
     err=True
     print('termux api is not installed.')
 if not termux_play:
@@ -19,8 +20,6 @@ if not termux_record:
 if not err:
     print('termux OK')
 
-else:
-    lastaction='ERROR'
  
 from pydub import AudioSegment
 
@@ -29,6 +28,7 @@ from driver_audio import driver_audio
 class driver_termux_audio(driver_audio):
     def __init__(self):
         super().__init__()
+        self.lastaction='ERROR'
 
     def play_file(self, fn):
         termux.Media.play(fn)
