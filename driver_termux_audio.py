@@ -8,9 +8,10 @@ record_temp_file='._rec.wav'
 play_temp_file='._play.wav'
 err=False
 if not termux_api:
-    import termux
     err=True
     print('termux api is not installed.')
+else:
+    import termux
 if not termux_play:
     err=True
     print('Missing termux-media-player')
@@ -28,7 +29,7 @@ from driver_audio import driver_audio
 class driver_termux_audio(driver_audio):
     def __init__(self):
         super().__init__()
-        self.lastaction='ERROR'
+        self.lastaction=''
 
     def play_file(self, fn):
         termux.Media.play(fn)
@@ -48,7 +49,7 @@ class driver_termux_audio(driver_audio):
             audio_segment = pydub.AudioSegment(buf,
                 frame_rate=self.audio.frame_rate, 
                 sample_width=self.audio.sample_width, 
-                channels=self.audio.channelschannels)
+                channels=self.audio.channels)
             audio_segment.export(play_temp_file)
             self.lastaction='play'
             self.play_file(play_temp_file)
@@ -68,7 +69,7 @@ class driver_termux_audio(driver_audio):
     def rec(self):
         super().rec()
         if self.lastaction=='':
-            self.rec_file(record_temp_file, fps=fps)
+            self.rec_file(record_temp_file, fps=self.fps)
             self.lastaction='record'
         return self.record_buffer
 
@@ -79,7 +80,7 @@ class driver_termux_audio(driver_audio):
     def setAudio(self, buffer, fps, sample_width, channels):
         buf=buffer
         # Create a pydub AudioSegment 
-        return AudioSegment(buf.tobytes(),
+        return AudioSegment(buf.get_array_of_samples().tobytes(),
             frame_rate=fps, sample_width=sample_width, channels=channels)
 
 
