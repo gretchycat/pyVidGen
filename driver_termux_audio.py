@@ -56,14 +56,15 @@ class driver_termux_audio(driver_audio):
 
     def stop(self):
         if self.lastaction=='play':
+            self.lastaction=''
             termux.Media.control("stop")
             os.remove(play_temp_file)
-            self.lastaction=''
         elif self.lastaction=='record':
-            termux.Microphone.stop()
-            self.record_buffer=AudioSegment.from_file(record_temp_file)
-            #os.remove(record_temp_file)
             self.lastaction=''
+            termux.Microphone.stop()
+            self.record_audio=AudioSegment.from_file(record_temp_file)
+            self.record_buffer=self.record_audio.get_array_of_samples()
+            os.remove(record_temp_file)
         super().stop()
 
     def rec(self):
@@ -71,16 +72,14 @@ class driver_termux_audio(driver_audio):
         if self.lastaction=='':
             self.rec_file(record_temp_file, fps=self.fps)
             self.lastaction='record'
-        return self.record_buffer
+        #return self.record_buffer
 
     def wait(self):
         super().wait()
         return sd.wait()
 
     def setAudio(self, buffer, fps, sample_width, channels):
-        buf=buffer
         # Create a pydub AudioSegment 
-        return AudioSegment(buf.get_array_of_samples().tobytes(),
+        return AudioSegment(buffer.tobytes(),
             frame_rate=fps, sample_width=sample_width, channels=channels)
-
 
