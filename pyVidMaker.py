@@ -2,7 +2,7 @@
 import sys, hashlib, subprocess, logging, colorlog, datetime, glob, shutil, io
 import os, json, mistune, xml.etree.ElementTree as ET, binascii, fcntl, termios
 import string, xml.dom.minidom as minidom, pyte, configparser, pydub, re, array
-from termcontrol import termcontrol, pyteLogger, boxDraw, widgetScreen, widgetProgressBar
+from gm_termcontrol.termcontrol import termcontrol, pyteLogger, boxDraw, widgetScreen, widgetProgressBar
 from pprint import pprint
 #import sounddevice
 from optparse import OptionParser
